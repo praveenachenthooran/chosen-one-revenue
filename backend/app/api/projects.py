@@ -29,6 +29,7 @@ from app.models import (
     ProjectMonthlyRevenue,
     ProjectOwner,
 )
+from app.pipeline.drafts import DRAFT_STATUS
 from app.schemas import (
     AttentionOut,
     FiscalYearTotal,
@@ -288,6 +289,7 @@ async def monthly_totals(
         )
         .join(Project, Project.id == ProjectMonthlyRevenue.project_id)
         .join(Customer, Customer.id == Project.customer_id)
+        .where(Project.status != DRAFT_STATUS)  # unconfirmed drafts are not committed revenue
         .group_by(ProjectMonthlyRevenue.month)
     )
     rows = {
@@ -312,7 +314,10 @@ async def monthly_totals(
 
     count_stmt = select(func.count()).select_from(
         apply_filters(
-            select(Project.id).join(Customer, Customer.id == Project.customer_id), filters
+            select(Project.id)
+            .join(Customer, Customer.id == Project.customer_id)
+            .where(Project.status != DRAFT_STATUS),
+            filters,
         ).subquery()
     )
     return TotalsResponse(
