@@ -18,6 +18,7 @@ export type Project = {
   total_revenue: string
   attention_count: number
   last_updated: string | null
+  can_edit: boolean
   monthly: Record<string, string> | null
 }
 
@@ -66,23 +67,131 @@ export type ProjectDetail = Project & {
   source_row_number: number | null
   last_updated_by: string | null
   owners: Owner[]
-  monthly_revenue: { month: string; fiscal_year: string; amount: string; source_cell: string | null }[]
+  monthly_revenue: {
+    month: string
+    fiscal_year: string
+    amount: string
+    baseline_amount: string | null
+    edited: boolean
+    source_cell: string | null
+  }[]
   attention: { code: string; message: string }[]
+  can_view_history: boolean
+}
+
+export type AuthUser = {
+  id: number
+  name: string
+  email: string | null
+  roles: string[]
+  can_edit_all: boolean
+}
+
+export type AuthStatus = {
+  authenticated: boolean
+  user: AuthUser | null
+  csrf_token: string | null
+  csrf_header: string | null
+}
+
+export type EditResult = {
+  project_id: number
+  month: string
+  amount: string
+  previous_amount: string | null
+  changed: boolean
+  project_total: string
+  revision_id: number | null
+}
+
+export type HistoryItem = {
+  id: number
+  created_at: string
+  field: string
+  month: string | null
+  change_type: string
+  old_value: string | null
+  new_value: string | null
+  reason: string | null
+  actor_name: string
+  from_import: boolean
 }
 
 export class ApiError extends Error {
   readonly status: number
-  constructor(status: number, message: string) {
+  readonly code: string | null
+  readonly currentAmount: string | null
+  constructor(status: number, message: string, code: string | null = null, currentAmount: string | null = null) {
     super(message)
     this.status = status
+    this.code = code
+    this.currentAmount = currentAmount
   }
 }
 
-async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(`/api${path}`, { signal })
-  if (!response.ok) throw new ApiError(response.status, `Request failed (${response.status})`)
+// The CSRF token for state-changing requests; handed out by /auth/me for the current session.
+let csrf: { header: string; token: string } | null = null
+
+async function failure(response: Response): Promise<ApiError> {
+  try {
+    const body = (await response.json()) as { detail?: unknown }
+    const detail = body.detail
+    if (detail && typeof detail === 'object' && 'message' in detail) {
+      const d = detail as { message: string; code?: string; current_amount?: string | null }
+      return new ApiError(response.status, d.message, d.code ?? null, d.current_amount ?? null)
+    }
+    if (typeof detail === 'string') return new ApiError(response.status, detail)
+  } catch {
+    // not JSON; fall through
+  }
+  return new ApiError(response.status, `Request failed (${response.status})`)
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`/api${path}`, { credentials: 'same-origin', ...init })
+  if (!response.ok) throw await failure(response)
   return (await response.json()) as T
 }
+
+const get = <T>(path: string, signal?: AbortSignal) => request<T>(path, { signal })
+
+function send<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (csrf) headers[csrf.header] = csrf.token
+  return request<T>(path, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+}
+
+export async function fetchAuth(signal?: AbortSignal): Promise<AuthStatus> {
+  const status = await get<AuthStatus>('/auth/me', signal)
+  csrf = status.csrf_header && status.csrf_token ? { header: status.csrf_header, token: status.csrf_token } : null
+  return status
+}
+
+export async function signOut(): Promise<void> {
+  await send('POST', '/auth/logout')
+  csrf = null
+}
+
+/** Set one month of the current forecast. `expected` is what the editor last saw (null = blank). */
+export const saveMonth = (
+  projectId: number,
+  month: string,
+  amount: string,
+  expected: string | null,
+  reason?: string,
+) =>
+  send<EditResult>('PUT', `/v1/projects/${projectId}/revenue/${month}`, {
+    amount,
+    expected_amount: expected,
+    reason: reason || null,
+  })
+
+export const fetchHistory = (projectId: number, signal?: AbortSignal) =>
+  get<{ items: HistoryItem[]; total_items: number }>(`/v1/projects/${projectId}/history`, signal)
 
 export const fetchMonths = (signal?: AbortSignal) => get<MonthsResponse>('/v1/months', signal)
 export const fetchTotals = (signal?: AbortSignal) =>

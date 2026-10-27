@@ -1,16 +1,17 @@
-import { useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AllCommunityModule,
   ModuleRegistry,
   themeQuartz,
   type ColDef,
   type ColGroupDef,
+  type GridApi,
   type ICellRendererParams,
   type ValueGetterParams,
 } from 'ag-grid-community'
 import { AgGridReact } from 'ag-grid-react'
 import type { MonthColumn, Project, TotalsResponse } from '../api'
-import { formatMoney } from '../format'
+import { formatMoney, parseAmountInput } from '../format'
 
 ModuleRegistry.registerModules([AllCommunityModule])
 
@@ -31,6 +32,10 @@ type Props = {
   totals: TotalsResponse | null
   quickFilter: string
   onOpenProject: (project: Project) => void
+  /** Called when someone finishes editing a month; the workspace validates and saves it. */
+  onEditAmount: (projectId: number, month: string, raw: string) => void
+  /** `projectId:month` keys currently being saved. */
+  pending: ReadonlySet<string>
   /** Turn off row/column virtualisation; only for environments without layout (jsdom tests). */
   renderAll?: boolean
 }
@@ -51,8 +56,24 @@ export default function ForecastGrid({
   totals,
   quickFilter,
   onOpenProject,
+  onEditAmount,
+  pending,
   renderAll = false,
 }: Props) {
+  const gridApi = useRef<GridApi<GridRow> | null>(null)
+  // A mutable copy of the pending keys that cell class rules can read at any time.
+  const [pendingStore] = useState(() => new Set<string>())
+  const isPending = useCallback(
+    (id: number | undefined, month: string) => pendingStore.has(`${id}:${month}`),
+    [pendingStore],
+  )
+
+  useEffect(() => {
+    pendingStore.clear()
+    pending.forEach((key) => pendingStore.add(key))
+    gridApi.current?.refreshCells({ force: true, suppressFlash: true })
+  }, [pending, pendingStore])
+
   const columnDefs = useMemo<(ColDef<GridRow> | ColGroupDef<GridRow>)[]>(() => {
     const amount = (month: string) => (params: ValueGetterParams<GridRow>) => {
       const value = params.data?.monthly?.[month]
@@ -75,6 +96,19 @@ export default function ForecastGrid({
         headerClass: m.is_closed ? 'month-closed' : undefined,
         cellClass: m.is_closed ? 'cell-closed' : undefined,
         valueGetter: amount(m.month),
+        // Only rows the signed-in user may edit are editable; the server enforces this too.
+        editable: (p) => !!p.data && !p.data.isTotal && p.data.can_edit,
+        valueSetter: (p) => {
+          const plain = parseAmountInput(String(p.newValue ?? ''))
+          // Skip no-op edits; the workspace refreshes the row from the server after saving.
+          if (plain !== null && p.oldValue !== null && Number(plain) === p.oldValue) return false
+          if (p.data) onEditAmount(p.data.id, m.month, String(p.newValue ?? ''))
+          return false
+        },
+        cellClassRules: {
+          'cell-editable': (p) => !!p.data && !p.data.isTotal && p.data.can_edit,
+          'cell-saving': (p) => isPending(p.data?.id, m.month),
+        },
       }
       byYear.set(m.fiscal_year, [...(byYear.get(m.fiscal_year) ?? []), column])
     }
@@ -131,7 +165,7 @@ export default function ForecastGrid({
         ([year, children]): ColGroupDef<GridRow> => ({ headerName: year, children }),
       ),
     ]
-  }, [months, onOpenProject])
+  }, [months, onOpenProject, onEditAmount, isPending])
 
   // Totals are calculated by the API (never summed in the browser).
   const totalRow = useMemo<GridRow[]>(() => {
@@ -161,6 +195,10 @@ export default function ForecastGrid({
         defaultColDef={{ sortable: true, resizable: true, suppressMovable: true }}
         getRowId={(p) => String(p.data.id)}
         tooltipShowDelay={400}
+        onGridReady={(event) => {
+          gridApi.current = event.api
+        }}
+        stopEditingWhenCellsLoseFocus
         suppressColumnVirtualisation={renderAll}
         suppressRowVirtualisation={renderAll}
         domLayout={renderAll ? 'autoHeight' : 'normal'}

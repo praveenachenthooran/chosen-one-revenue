@@ -12,6 +12,8 @@ function renderGrid(overrides: Partial<Parameters<typeof ForecastGrid>[0]> = {})
       totals={totals}
       quickFilter=""
       onOpenProject={vi.fn()}
+      onEditAmount={vi.fn()}
+      pending={new Set()}
       renderAll
       {...overrides}
     />,

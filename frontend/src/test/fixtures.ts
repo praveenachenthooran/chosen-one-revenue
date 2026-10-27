@@ -1,4 +1,4 @@
-import type { ImportRun, MonthColumn, Project, TotalsResponse } from '../api'
+import type { AuthStatus, HistoryItem, ImportRun, MonthColumn, Project, TotalsResponse } from '../api'
 
 export const months: MonthColumn[] = [
   { month: '2026-09-01', label: 'Sep 2026', fiscal_year: 'FY27', fiscal_period: 6, is_closed: true },
@@ -15,6 +15,7 @@ const base = {
   ae: null,
   commercial_owner: null,
   last_updated: '2026-09-14',
+  can_edit: false,
 }
 
 export const projects: Project[] = [
@@ -28,11 +29,13 @@ export const projects: Project[] = [
     client_partner: null,
     total_revenue: '1250.50',
     attention_count: 1,
+    can_edit: true,
     monthly: { '2026-10-01': '1250.50' },
   },
   {
     ...base,
     id: 2,
+    can_edit: false,
     source_row_id: 'R1001',
     customer: 'Kestrel Life',
     name: 'Policy Admin',
@@ -83,31 +86,106 @@ export function json(body: unknown, status = 200): Response {
   })
 }
 
-/** Routes mocked fetch calls by URL path (query string ignored). */
-export function mockApi(routes: Record<string, () => Response>) {
-  return (input: RequestInfo | URL): Promise<Response> => {
+export const signedIn: AuthStatus = {
+  authenticated: true,
+  user: {
+    id: 7,
+    name: 'Avery Chen',
+    email: 'avery@corp.test',
+    roles: ['Client Partner'],
+    can_edit_all: false,
+  },
+  csrf_token: 'csrf-token-123',
+  csrf_header: 'X-CSRF-Token',
+}
+
+export const signedOut: AuthStatus = {
+  authenticated: false,
+  user: null,
+  csrf_token: null,
+  csrf_header: null,
+}
+
+export const history: HistoryItem[] = [
+  {
+    id: 12,
+    created_at: '2026-10-20T15:30:00Z',
+    field: 'revenue',
+    month: '2026-10-01',
+    change_type: 'update',
+    old_value: '1000.00',
+    new_value: '1250.50',
+    reason: 'Client added scope',
+    actor_name: 'Avery Chen',
+    from_import: false,
+  },
+  {
+    id: 1,
+    created_at: '2026-10-01T12:00:00Z',
+    field: 'project',
+    month: null,
+    change_type: 'create',
+    old_value: null,
+    new_value: 'R1003',
+    reason: null,
+    actor_name: 'excel-import',
+    from_import: true,
+  },
+]
+
+export type Handler = (request: { body: unknown; headers: Record<string, string> }) => Response
+export type Routes = Record<string, Handler>
+
+/** Routes mocked fetch calls by "METHOD /path" or "/path" (GET); the query string is ignored. */
+export function mockApi(routes: Routes) {
+  return (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const path = String(input).replace(/\?.*$/, '')
-    const route = routes[path]
-    return Promise.resolve(route ? route() : json({ detail: 'Not Found' }, 404))
+    const method = (init?.method ?? 'GET').toUpperCase()
+    const handler = routes[`${method} ${path}`] ?? (method === 'GET' ? routes[path] : undefined)
+    const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined
+    const headers = (init?.headers ?? {}) as Record<string, string>
+    return Promise.resolve(handler ? handler({ body, headers }) : json({ detail: 'Not Found' }, 404))
   }
 }
 
-export const okRoutes: Record<string, () => Response> = {
+const detail = {
+  ...projects[0],
+  source_row_number: 5,
+  last_updated_by: 'Shah',
+  owners: [{ role: 'ae', code: 'Shah', name: 'Riley Shah' }],
+  monthly_revenue: [
+    {
+      month: '2026-10-01',
+      fiscal_year: 'FY27',
+      amount: '1250.50',
+      baseline_amount: '1000.00',
+      edited: true,
+      source_cell: 'Forecast!U5',
+    },
+  ],
+  attention: [{ code: 'missing_client_partner', message: 'No Client Partner' }],
+  can_view_history: true,
+}
+
+export const okRoutes: Routes = {
   '/api/health': () => json({ status: 'ok', service: 'chosen-one-api' }),
+  '/api/auth/me': () => json(signedIn),
   '/api/v1/projects': () =>
     json({ items: projects, page: 1, page_size: 500, total_items: 2, total_pages: 1 }),
   '/api/v1/months': () => json({ as_of: '2026-10-01', months }),
   '/api/v1/revenue/monthly-totals': () => json(totals),
   '/api/v1/imports/latest': () => json(latestImport),
-  '/api/v1/projects/1': () =>
+  '/api/v1/projects/1': () => json(detail),
+  '/api/v1/projects/1/history': () => json({ items: history, total_items: history.length }),
+  '/api/v1/projects/2': () =>
     json({
-      ...projects[0],
-      source_row_number: 5,
-      last_updated_by: 'Shah',
-      owners: [{ role: 'ae', code: 'Shah', name: 'Riley Shah' }],
-      monthly_revenue: [
-        { month: '2026-10-01', fiscal_year: 'FY27', amount: '1250.50', source_cell: 'Forecast!U5' },
-      ],
-      attention: [{ code: 'missing_client_partner', message: 'No Client Partner' }],
+      ...projects[1],
+      source_row_number: 3,
+      last_updated_by: 'AC',
+      owners: [],
+      monthly_revenue: [],
+      attention: [],
+      can_view_history: false,
     }),
+  'POST /api/auth/logout': () => json({ authenticated: false }),
 }

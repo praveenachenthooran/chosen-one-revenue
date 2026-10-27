@@ -1,34 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
-import {
-  fetchAllProjects,
-  fetchLatestImport,
-  fetchMonths,
-  fetchTotals,
-  type ImportRun,
-  type MonthColumn,
-  type Project,
-  type TotalsResponse,
-} from './api'
-import ForecastGrid from './components/ForecastGrid'
-import ImportStatus from './components/ImportStatus'
-import ProjectDetailPanel from './components/ProjectDetailPanel'
+import { fetchAuth, signOut, type AuthUser } from './api'
+import ForecastWorkspace from './ForecastWorkspace'
+import SignIn from './components/SignIn'
 
 type Health = { status: string; service: string }
-type HealthState =
+type HealthState = { kind: 'loading' } | { kind: 'ready'; health: Health } | { kind: 'error' }
+type AuthState =
   | { kind: 'loading' }
-  | { kind: 'ready'; health: Health }
-  | { kind: 'error' }
-
-type Forecast = {
-  projects: Project[]
-  months: MonthColumn[]
-  totals: TotalsResponse
-  latestImport: ImportRun | null
-}
-type ForecastState =
-  | { kind: 'loading' }
-  | { kind: 'error' }
-  | { kind: 'ready'; forecast: Forecast }
+  | { kind: 'unreachable' }
+  | { kind: 'signedOut'; error: string | null }
+  | { kind: 'signedIn'; user: AuthUser }
 
 function isAbort(error: unknown) {
   return error instanceof DOMException && error.name === 'AbortError'
@@ -52,36 +33,15 @@ function useHealth(): HealthState {
   return state
 }
 
-function useForecast(): [ForecastState, () => void] {
-  const [state, setState] = useState<ForecastState>({ kind: 'loading' })
-  const [attempt, setAttempt] = useState(0)
-
-  useEffect(() => {
-    const controller = new AbortController()
-    const { signal } = controller
-    Promise.all([
-      fetchAllProjects(signal),
-      fetchMonths(signal),
-      fetchTotals(signal),
-      fetchLatestImport(signal),
-    ])
-      .then(([projects, months, totals, latestImport]) =>
-        setState({
-          kind: 'ready',
-          forecast: { projects, months: months.months, totals, latestImport },
-        }),
-      )
-      .catch((error: unknown) => {
-        if (!isAbort(error)) setState({ kind: 'error' })
-      })
-    return () => controller.abort()
-  }, [attempt])
-
-  const retry = useCallback(() => {
-    setState({ kind: 'loading' })
-    setAttempt((n) => n + 1)
-  }, [])
-  return [state, retry]
+/** The sign-in error Google redirected back with (?auth_error=...), removed from the URL. */
+function takeAuthError(): string | null {
+  const url = new URL(window.location.href)
+  const error = url.searchParams.get('auth_error')
+  if (error) {
+    url.searchParams.delete('auth_error')
+    window.history.replaceState(null, '', url.pathname + url.search + url.hash)
+  }
+  return error
 }
 
 function HealthIndicator({ state }: { state: HealthState }) {
@@ -111,9 +71,46 @@ function HealthIndicator({ state }: { state: HealthState }) {
 
 export default function App() {
   const health = useHealth()
-  const [forecastState, retry] = useForecast()
-  const [quickFilter, setQuickFilter] = useState('')
-  const [selected, setSelected] = useState<Project | null>(null)
+  const [auth, setAuth] = useState<AuthState>({ kind: 'loading' })
+  const [attempt, setAttempt] = useState(0)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const authError = takeAuthError()
+    fetchAuth(controller.signal)
+      .then((status) =>
+        setAuth(
+          status.authenticated && status.user
+            ? { kind: 'signedIn', user: status.user }
+            : { kind: 'signedOut', error: authError },
+        ),
+      )
+      .catch((error: unknown) => {
+        if (!isAbort(error)) setAuth({ kind: 'unreachable' })
+      })
+    return () => controller.abort()
+  }, [attempt])
+
+  const onSessionEnded = useCallback(() => setAuth({ kind: 'signedOut', error: 'session_ended' }), [])
+
+  async function handleSignOut() {
+    try {
+      await signOut()
+    } finally {
+      setAuth({ kind: 'signedOut', error: null })
+    }
+  }
+
+  if (auth.kind === 'signedOut') {
+    return (
+      <>
+        <SignIn error={auth.error} />
+        <div className="signin-health">
+          <HealthIndicator state={health} />
+        </div>
+      </>
+    )
+  }
 
   return (
     <div className="app-page">
@@ -122,75 +119,47 @@ export default function App() {
           <p className="eyebrow mb-1">BIG Revenue Forecasting</p>
           <h1 className="h3 fw-semibold mb-0">The Chosen One</h1>
         </div>
-        <HealthIndicator state={health} />
+        <div className="d-flex align-items-center gap-3 flex-wrap justify-content-end">
+          <HealthIndicator state={health} />
+          {auth.kind === 'signedIn' && (
+            <div className="d-flex align-items-center gap-2">
+              <span className="small text-end">
+                <strong>{auth.user.name}</strong>
+                <br />
+                <span className="text-secondary">{auth.user.roles.join(' · ') || 'No roles'}</span>
+              </span>
+              <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => void handleSignOut()}>
+                Sign out
+              </button>
+            </div>
+          )}
+        </div>
       </header>
 
       <main className="app-main">
-        {forecastState.kind === 'loading' && (
+        {auth.kind === 'loading' && (
           <div className="state-box" role="status" aria-live="polite">
             <span className="spinner-border spinner-border-sm text-primary" aria-hidden="true" />
-            <span>Loading the forecast…</span>
+            <span>Checking your session…</span>
           </div>
         )}
-
-        {forecastState.kind === 'error' && (
+        {auth.kind === 'unreachable' && (
           <div className="state-box" role="alert">
-            <p className="mb-2">The forecast could not be loaded.</p>
-            <p className="text-secondary small mb-3">
-              Check that the API is running and reachable from this environment.
-            </p>
-            <button type="button" className="btn btn-primary btn-sm" onClick={retry}>
+            <p className="mb-2">We could not check whether you are signed in.</p>
+            <p className="text-secondary small mb-3">The API may be down. Try again in a moment.</p>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => {
+                setAuth({ kind: 'loading' })
+                setAttempt((n) => n + 1)
+              }}
+            >
               Try again
             </button>
           </div>
         )}
-
-        {forecastState.kind === 'ready' && forecastState.forecast.projects.length === 0 && (
-          <div className="state-box">
-            <p className="mb-2">No projects have been imported yet.</p>
-            <p className="text-secondary small mb-0">
-              Run <code>uv run python -m app.migration</code> from the <code>backend</code> folder.
-            </p>
-          </div>
-        )}
-
-        {forecastState.kind === 'ready' && forecastState.forecast.projects.length > 0 && (
-          <>
-            {forecastState.forecast.latestImport && (
-              <ImportStatus run={forecastState.forecast.latestImport} />
-            )}
-            <div className="toolbar">
-              <input
-                type="search"
-                className="form-control form-control-sm"
-                placeholder="Search customer or project"
-                aria-label="Search customer or project"
-                value={quickFilter}
-                onChange={(event) => setQuickFilter(event.target.value)}
-              />
-              <span className="text-secondary small">
-                {forecastState.forecast.projects.length} projects · read-only
-              </span>
-            </div>
-            <div className="workspace">
-              <ForecastGrid
-                projects={forecastState.forecast.projects}
-                months={forecastState.forecast.months}
-                totals={forecastState.forecast.totals}
-                quickFilter={quickFilter}
-                onOpenProject={setSelected}
-                renderAll={import.meta.env.MODE === 'test'}
-              />
-              {selected && (
-                <ProjectDetailPanel
-                  key={selected.id}
-                  project={selected}
-                  onClose={() => setSelected(null)}
-                />
-              )}
-            </div>
-          </>
-        )}
+        {auth.kind === 'signedIn' && <ForecastWorkspace onSessionEnded={onSessionEnded} />}
       </main>
     </div>
   )
