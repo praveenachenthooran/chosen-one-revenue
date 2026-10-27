@@ -29,3 +29,18 @@ reference
 *.pyo
 .DS_Store
 Thumbs.db
+
+# Local tooling, caches and build output (never part of an image)
+**/.pytest_cache*
+**/.ruff_cache/
+**/.pyright/
+**/.pytest_tmp
+**/*.tsbuildinfo
+**/*.log
+.idea
+.vscode
+.claude
+backend/static
+**/dist
+.coverage
+htmlcov
