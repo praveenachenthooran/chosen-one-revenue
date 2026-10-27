@@ -1,6 +1,6 @@
 # The Chosen One
 
-The Chosen One is BIG's internal revenue forecasting application. This repository currently contains the Milestone 0 development foundation only: a React frontend, FastAPI backend, PostgreSQL database configuration, tests, and local containers. Revenue forecasting features are intentionally not implemented yet.
+The Chosen One is BIG's internal revenue forecasting application. This repository contains the Milestone 0 foundation (React frontend, FastAPI backend, PostgreSQL, tests, local containers) and Milestone 1: the revenue data model, the Excel migration, a read-only forecast API and a read-only AG Grid forecast. Sign-in, editing, HubSpot sync and AI features are not implemented yet.
 
 ## Required tools
 
@@ -15,6 +15,7 @@ The Chosen One is BIG's internal revenue forecasting application. This repositor
 backend/       FastAPI application, Alembic, and Python tests
 frontend/      React, TypeScript, Vite, and Vitest
 reference/     Untracked internal requirements, designs, and demo data
+docs/          Milestone notes and assumptions
 scripts/       Project helper scripts
 tests/         Reserved for future cross-application tests
 ```
@@ -64,6 +65,40 @@ npm run dev
 ```
 
 Vite proxies `/api/*` to FastAPI and removes the `/api` prefix, so `/api/health` reaches FastAPI's `/health` endpoint.
+
+## Milestone 1: import and view the forecast
+
+1. Start PostgreSQL and apply migrations:
+
+   ```powershell
+   docker compose up -d db
+   Set-Location backend
+   uv run alembic upgrade head
+   ```
+
+2. Import the workbook (read-only access to the file; safe to repeat):
+
+   ```powershell
+   uv run python -m app.migration            # defaults to reference/03-demo-data/Chosen_One_Dummy_Data_FY27.xlsx
+   uv run python -m app.migration --file path/to/other.xlsx
+   uv run python -m app.migration --dry-run  # parse and validate only, no database writes
+   ```
+
+   The command prints rows read, created / updated / unchanged, every rejected row with its reason, warnings,
+   and a month-by-month reconciliation against the workbook. Exit code 0 = imported and reconciled,
+   1 = failed, 2 = imported but not reconciled. Running it again never duplicates data.
+
+3. Start the app (`docker compose up --build`, or run `uvicorn` and `npm run dev` as above) and open
+   <http://localhost:5173> for the forecast grid. Click a project name for its details. The grid is
+   read-only. The API is at <http://localhost:8000/docs> under `/v1` (projects, months, monthly totals,
+   import results); it is available only when `APP_ENV` is `development` or `test`.
+
+Assumptions, the PRD fiscal-year discrepancy and data-quality findings are in
+[docs/milestone-1-assumptions.md](docs/milestone-1-assumptions.md).
+
+Backend tests need PostgreSQL running (`docker compose up -d db`). They create and use a separate
+`chosen_one_test` database on the same server and never touch the development data. The test that imports
+the real workbook is skipped when `reference/` is absent.
 
 ## Environment variables
 

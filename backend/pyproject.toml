@@ -27,6 +27,7 @@ dev = [
 
 [tool.pytest.ini_options]
 addopts = "-ra"
+asyncio_mode = "auto"
 testpaths = ["tests"]
 
 [tool.ruff]
@@ -36,10 +37,27 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.per-file-ignores]
+"migrations/versions/*" = ["E501"]  # Alembic-generated
+
 [tool.pyright]
 pythonVersion = "3.14"
 typeCheckingMode = "strict"
 include = ["app", "tests"]
+
+# Tests use untyped third-party APIs (asyncpg, openpyxl) and parametrized lambdas.
+[[tool.pyright.executionEnvironments]]
+root = "tests"
+extraPaths = ["."]
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownArgumentType = false
+reportUnknownLambdaType = false
+reportUnknownParameterType = false
+reportMissingTypeStubs = false
+
+[[tool.pyright.executionEnvironments]]
+root = "."
 
 [build-system]
 requires = ["hatchling"]
