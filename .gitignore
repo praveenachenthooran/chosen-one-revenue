@@ -1,0 +1,38 @@
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.uv-cache/
+htmlcov/
+.coverage
+
+# Node / frontend
+node_modules/
+.npm-cache/
+frontend/dist/
+frontend/coverage/
+*.tsbuildinfo
+
+# Build and editor output
+dist/
+build/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Internal source documents and demo data
+reference/
+
