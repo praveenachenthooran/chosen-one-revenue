@@ -1,12 +1,10 @@
 """Shared query pieces. All financial aggregation happens here, in SQL, never in the browser."""
 
 from dataclasses import dataclass
-from datetime import date
 from typing import Annotated, Any
 
 from fastapi import Depends, Query
 from sqlalchemy import Select, exists, func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     Customer,
@@ -17,6 +15,7 @@ from app.models import (
     ProjectOwner,
     User,
 )
+from app.months import month_columns as month_columns  # noqa: PLC0414 (re-exported)
 
 
 @dataclass
@@ -90,10 +89,11 @@ def apply_filters[S: Select[*tuple[Any, ...]]](stmt: S, f: ProjectFilters) -> S:
         (Project.region, f.region),
         (Project.industry, f.industry),
         (Project.category_code, f.category),
-        (Customer.name, f.customer),
     ):
         if value:
             stmt = stmt.where(column == value)
+    if f.customer:
+        stmt = stmt.where(func.lower(Customer.name) == f.customer.strip().lower())
     if f.owner:
         stmt = stmt.where(
             exists().where(
@@ -107,19 +107,3 @@ def apply_filters[S: Select[*tuple[Any, ...]]](stmt: S, f: ProjectFilters) -> S:
     elif f.needs_attention is False:
         stmt = stmt.where(attention_count == 0)
     return stmt
-
-
-async def month_columns(session: AsyncSession) -> list[date]:
-    """Fiscal months to display: the latest import's columns, else months that hold data."""
-    run = await session.scalar(
-        select(ImportRun)
-        .where(ImportRun.status == "completed")
-        .order_by(ImportRun.id.desc())
-        .limit(1)
-    )
-    if run and run.month_columns:
-        return [date.fromisoformat(m) for m in run.month_columns]
-    rows = await session.scalars(
-        select(ProjectMonthlyRevenue.month).distinct().order_by(ProjectMonthlyRevenue.month)
-    )
-    return list(rows)

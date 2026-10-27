@@ -30,6 +30,18 @@ class Settings(BaseSettings):
     session_secret: SecretStr | None = None
     session_max_age_seconds: int = 8 * 60 * 60
     anthropic_api_key: SecretStr | None = None
+
+    # --- HubSpot pipeline (Milestone 3) ---
+    # "workbook" reads the supplied export; "api" is reserved for the future read-only live adapter.
+    hubspot_source: Literal["workbook", "api"] = "workbook"
+    hubspot_workbook_path: str | None = (
+        None  # default: reference/03-demo-data/HubSpot_OnDeck_*.xlsx
+    )
+    hubspot_access_token: SecretStr | None = None  # read-only private-app token (live API only)
+    # PRD: alert the owner and CRO when a Closed Won draft is unconfirmed after 2 business days.
+    draft_confirmation_business_days: int = 2
+    # PRD: sync at least every 60 minutes; the UI warns once the last good sync is older.
+    hubspot_stale_after_minutes: int = 60
     frontend_url: AnyHttpUrl = AnyHttpUrl("http://localhost:5173")
 
     @property
