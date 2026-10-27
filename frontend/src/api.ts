@@ -223,3 +223,227 @@ export async function fetchAllProjects(signal?: AbortSignal): Promise<Project[]>
     page += 1
   }
 }
+
+// ---- Pipeline (Milestone 3) ---------------------------------------------------------------
+
+export type ForecastMonth = {
+  month: string
+  fiscal_year: string
+  fiscal_period: number
+  committed: string
+  weighted: string
+  total: string
+}
+
+export type ForecastTotals = {
+  months: ForecastMonth[]
+  fiscal_years: { fiscal_year: string; committed: string; weighted: string; total: string }[]
+  committed_total: string
+  weighted_total: string
+  combined_total: string
+  weighted_deals: number
+  unphased: { deals: number; weighted_amount: string }
+  outside_window_weighted: string
+  filters_applied: boolean
+}
+
+export type DealStatus =
+  | 'weighted'
+  | 'awaiting_confirmation'
+  | 'closed_won_pending'
+  | 'linked'
+  | 'closed_lost'
+  | 'excluded'
+
+export type DraftInfo = {
+  project_id: number
+  owner_name: string | null
+  requested_at: string
+  due_at: string
+  overdue: boolean
+  confirmed_at: string | null
+  possible_duplicates: { project_id: number; source_row_id: string; name: string; status: string }[]
+}
+
+export type DealSummary = {
+  id: number
+  hubspot_deal_id: string
+  name: string
+  company: string | null
+  company_id: string | null
+  owner_name: string | null
+  owner_code: string | null
+  stage: string
+  probability: string | null
+  amount: string | null
+  weighted_amount: string
+  expected_start: string | null
+  duration_months: number | null
+  close_date: string | null
+  practice: string | null
+  region: string | null
+  industry: string | null
+  lifecycle: string
+  status: DealStatus
+  counts_in_forecast: boolean
+  phaseable: boolean
+  unphased_reason: string | null
+  linked_project: { id: number; source_row_id: string; name: string; status: string } | null
+  draft: DraftInfo | null
+  findings: number
+}
+
+export type DealPage = {
+  items: DealSummary[]
+  page: number
+  total_items: number
+  total_pages: number
+  weighted_total: string
+}
+
+export type ScheduleCheck = {
+  deal_amount: string | null
+  schedule_total: string
+  outside_window: string
+  variance_ratio: string | null
+  exceeds_threshold: boolean
+}
+
+export type PipelineEvent = {
+  id: number
+  event_type: string
+  created_at: string
+  actor_label: string
+  from_value: string | null
+  to_value: string | null
+  message: string
+}
+
+export type DealDetail = DealSummary & {
+  monthly: { month: string; amount: string }[]
+  outside_window: string
+  findings_list: { severity: string; code: string; message: string }[]
+  events: PipelineEvent[]
+  schedule_check: ScheduleCheck | null
+  can_confirm: boolean
+}
+
+export type SyncRun = {
+  id: number
+  status: string
+  source: string
+  source_ref: string | null
+  started_at: string
+  finished_at: string | null
+  deals_seen: number
+  deals_created: number
+  deals_updated: number
+  drafts_created: number
+  lines_retired: number
+  findings_count: number
+  error_message: string | null
+  triggered_by_label: string
+}
+
+export type SyncStatus = {
+  last_run: SyncRun | null
+  last_success: SyncRun | null
+  stale: boolean
+  reason: 'never' | 'failed' | 'old' | null
+  stale_since: string | null
+  stale_after_minutes: number
+  can_sync: boolean
+  configured_source: string
+}
+
+export type Confirmation = {
+  project_id: number
+  project_name: string
+  customer: string
+  deal_id: number
+  hubspot_deal_id: string
+  owner_name: string | null
+  amount: string | null
+  schedule_total: string
+  requested_at: string
+  due_at: string
+  overdue: boolean
+  has_possible_duplicates: boolean
+  can_confirm: boolean
+}
+
+export type FilterOptions = {
+  practices: string[]
+  regions: string[]
+  industries: string[]
+  categories: string[]
+  customers: string[]
+  owners: { code: string; name: string }[]
+}
+
+export type Stage = {
+  id: number
+  name: string
+  probability: string
+  kind: 'open' | 'won' | 'lost'
+  in_forecast: boolean
+  position: number
+  source: string
+}
+
+export type ForecastFilters = {
+  owner?: string
+  practice?: string
+  region?: string
+  industry?: string
+  category?: string
+  customer?: string
+  q?: string
+}
+
+function query(params: Record<string, string | number | undefined>): string {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '') search.set(key, String(value))
+  }
+  const text = search.toString()
+  return text ? `?${text}` : ''
+}
+
+export const fetchForecast = (filters: ForecastFilters, signal?: AbortSignal) =>
+  get<ForecastTotals>(`/v1/forecast/monthly${query({ ...filters })}`, signal)
+
+export const fetchDeals = (
+  filters: ForecastFilters,
+  options: { status?: string; sort?: string } = {},
+  signal?: AbortSignal,
+) => get<DealPage>(`/v1/pipeline/deals${query({ ...filters, ...options, page_size: 500 })}`, signal)
+
+export const fetchDeal = (id: number, signal?: AbortSignal) =>
+  get<DealDetail>(`/v1/pipeline/deals/${id}`, signal)
+
+export const fetchSyncStatus = (signal?: AbortSignal) =>
+  get<SyncStatus>('/v1/pipeline/sync/status', signal)
+
+export const triggerSync = () => send<SyncRun>('POST', '/v1/pipeline/sync')
+
+export const fetchConfirmations = (signal?: AbortSignal) =>
+  get<Confirmation[]>('/v1/pipeline/confirmations', signal)
+
+export const fetchFilterOptions = (signal?: AbortSignal) =>
+  get<FilterOptions>('/v1/pipeline/filter-options', signal)
+
+export const fetchStages = (signal?: AbortSignal) => get<Stage[]>('/v1/pipeline/stages', signal)
+
+export const updateStage = (id: number, body: { probability?: string; in_forecast?: boolean }) =>
+  send<Stage>('PUT', `/v1/pipeline/stages/${id}`, body)
+
+export const confirmDraft = (
+  projectId: number,
+  body: { acknowledge_possible_duplicate?: boolean; category?: string; industry?: string },
+) =>
+  send<{ project_id: number; status: string; weighted_line_retired: boolean; schedule_check: ScheduleCheck | null }>(
+    'POST',
+    `/v1/pipeline/drafts/${projectId}/confirm`,
+    body,
+  )

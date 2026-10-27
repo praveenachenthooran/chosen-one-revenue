@@ -1,4 +1,18 @@
-import type { AuthStatus, HistoryItem, ImportRun, MonthColumn, Project, TotalsResponse } from '../api'
+import type {
+  AuthStatus,
+  Confirmation,
+  DealDetail,
+  DealSummary,
+  FilterOptions,
+  ForecastTotals,
+  HistoryItem,
+  ImportRun,
+  MonthColumn,
+  Project,
+  Stage,
+  SyncStatus,
+  TotalsResponse,
+} from '../api'
 
 export const months: MonthColumn[] = [
   { month: '2026-09-01', label: 'Sep 2026', fiscal_year: 'FY27', fiscal_period: 6, is_closed: true },
@@ -167,6 +181,219 @@ const detail = {
   can_view_history: true,
 }
 
+// ---- Pipeline fixtures ----------------------------------------------------------------------
+
+export const forecast: ForecastTotals = {
+  months: [
+    { month: '2026-10-01', fiscal_year: 'FY27', fiscal_period: 7, committed: '3000.00', weighted: '0.00', total: '3000.00' },
+    { month: '2026-11-01', fiscal_year: 'FY27', fiscal_period: 8, committed: '6000.00', weighted: '10000.00', total: '16000.00' },
+  ],
+  fiscal_years: [{ fiscal_year: 'FY27', committed: '9000.00', weighted: '10000.00', total: '19000.00' }],
+  committed_total: '9000.00',
+  weighted_total: '10000.00',
+  combined_total: '19000.00',
+  weighted_deals: 2,
+  unphased: { deals: 1, weighted_amount: '596000.00' },
+  outside_window_weighted: '40000.00',
+  filters_applied: false,
+}
+
+const dealBase = {
+  company_id: '9000001',
+  owner_code: 'Shah',
+  close_date: '2026-12-01T10:30:00Z',
+  practice: 'APPIAN',
+  region: 'NA',
+  industry: null,
+  linked_project: null,
+  draft: null,
+  phaseable: true,
+  unphased_reason: null,
+  counts_in_forecast: true,
+}
+
+export const deals: DealSummary[] = [
+  {
+    ...dealBase,
+    id: 1,
+    hubspot_deal_id: '60866525874',
+    name: 'Pembrook - Appian Renewal',
+    company: 'Pembrook Housing Group',
+    owner_name: 'Avery Chen',
+    stage: 'Negotiation/Review',
+    probability: '0.6000',
+    amount: '812000.0000',
+    weighted_amount: '487200.00',
+    expected_start: '2026-10-01',
+    duration_months: 12,
+    lifecycle: 'weighted',
+    status: 'weighted',
+    findings: 1,
+  },
+  {
+    ...dealBase,
+    id: 2,
+    hubspot_deal_id: '65394918517',
+    name: 'Brightharbor - Claims AI Pilot',
+    company: 'Brightharbor Assurance',
+    owner_name: 'Riley Shah',
+    stage: 'Closed Won',
+    probability: '1.0000',
+    amount: '186000.0000',
+    weighted_amount: '186000.00',
+    expected_start: '2026-11-02',
+    duration_months: 6,
+    lifecycle: 'closed_won',
+    status: 'awaiting_confirmation',
+    findings: 0,
+    linked_project: { id: 55, source_row_id: 'HS-65394918517', name: 'Brightharbor - Claims AI Pilot', status: 'Draft' },
+    draft: {
+      project_id: 55,
+      owner_name: 'Riley Shah',
+      requested_at: '2026-10-01T09:00:00Z',
+      due_at: '2026-10-05T09:00:00Z',
+      overdue: true,
+      confirmed_at: null,
+      possible_duplicates: [],
+    },
+  },
+  {
+    ...dealBase,
+    id: 3,
+    hubspot_deal_id: '45297778568',
+    name: 'Brambleton Capital - Annual Services',
+    company: 'Brambleton Capital',
+    owner_name: 'Jamie Lowe',
+    stage: 'Contracting',
+    probability: '0.8000',
+    amount: '745000.0000',
+    weighted_amount: '596000.00',
+    expected_start: null,
+    duration_months: null,
+    lifecycle: 'weighted',
+    status: 'weighted',
+    phaseable: false,
+    unphased_reason: 'missing_start_or_duration',
+    findings: 2,
+  },
+]
+
+export function detailOf(deal: DealSummary, over: Partial<DealDetail> = {}): DealDetail {
+  return {
+    ...deal,
+    monthly: [
+      { month: '2026-11-01', amount: '31000.00' },
+      { month: '2026-12-01', amount: '31000.00' },
+    ],
+    outside_window: '0.00',
+    findings_list: [{ severity: 'warning', code: 'stale_close_date', message: 'Open deal with a close date in the past.' }],
+    events: [
+      {
+        id: 9,
+        event_type: 'draft_created',
+        created_at: '2026-10-01T09:00:00Z',
+        actor_label: 'hubspot-sync',
+        from_value: null,
+        to_value: null,
+        message: 'Closed Won: draft project created; confirmation requested',
+      },
+    ],
+    schedule_check: null,
+    can_confirm: false,
+    ...over,
+  }
+}
+
+export const draftDetail = detailOf(deals[1], {
+  can_confirm: true,
+  schedule_check: {
+    deal_amount: '186000.0000',
+    schedule_total: '186000.00',
+    outside_window: '0.00',
+    variance_ratio: '0.0000',
+    exceeds_threshold: false,
+  },
+})
+
+export const syncOk: SyncStatus = {
+  last_run: null,
+  last_success: {
+    id: 4,
+    status: 'completed',
+    source: 'workbook',
+    source_ref: 'HubSpot.xlsx',
+    started_at: '2026-10-01T09:00:00Z',
+    finished_at: '2026-10-01T09:00:05Z',
+    deals_seen: 53,
+    deals_created: 0,
+    deals_updated: 0,
+    drafts_created: 0,
+    lines_retired: 0,
+    findings_count: 13,
+    error_message: null,
+    triggered_by_label: 'system',
+  },
+  stale: false,
+  reason: null,
+  stale_since: null,
+  stale_after_minutes: 60,
+  can_sync: false,
+  configured_source: 'workbook',
+}
+
+export const confirmations: Confirmation[] = [
+  {
+    project_id: 55,
+    project_name: 'Brightharbor - Claims AI Pilot',
+    customer: 'Brightharbor Assurance',
+    deal_id: 2,
+    hubspot_deal_id: '65394918517',
+    owner_name: 'Riley Shah',
+    amount: '186000.0000',
+    schedule_total: '186000.00',
+    requested_at: '2026-10-01T09:00:00Z',
+    due_at: '2026-10-05T09:00:00Z',
+    overdue: true,
+    has_possible_duplicates: false,
+    can_confirm: true,
+  },
+]
+
+export const filterOptions: FilterOptions = {
+  practices: ['APPIAN', 'CRM'],
+  regions: ['NA', 'UK'],
+  industries: ['Insurance'],
+  categories: ['EE', 'EN', 'NN'],
+  customers: ['Brightharbor Assurance', 'Pembrook Housing Group'],
+  owners: [
+    { code: 'Shah', name: 'Riley Shah' },
+    { code: 'AC', name: 'Avery Chen' },
+  ],
+}
+
+export const stages: Stage[] = [
+  { id: 1, name: 'Presentation', probability: '0.2000', kind: 'open', in_forecast: true, position: 0, source: 'workbook' },
+  { id: 2, name: 'Negotiation/Review', probability: '0.6000', kind: 'open', in_forecast: true, position: 1, source: 'workbook' },
+  { id: 3, name: 'Closed Lost', probability: '0.0000', kind: 'lost', in_forecast: false, position: 2, source: 'workbook' },
+]
+
+export const adminMe: AuthStatus = {
+  ...signedIn,
+  user: { id: 1, name: 'Ada Admin', email: 'ada@corp.test', roles: ['Administrator'], can_edit_all: true },
+}
+
+export const pipelineRoutes: Routes = {
+  '/api/v1/forecast/monthly': () => json(forecast),
+  '/api/v1/pipeline/deals': () =>
+    json({ items: deals, page: 1, page_size: 500, total_items: 3, total_pages: 1, weighted_total: '1269200.00' }),
+  '/api/v1/pipeline/deals/1': () => json(detailOf(deals[0])),
+  '/api/v1/pipeline/deals/2': () => json(draftDetail),
+  '/api/v1/pipeline/sync/status': () => json(syncOk),
+  '/api/v1/pipeline/confirmations': () => json(confirmations),
+  '/api/v1/pipeline/filter-options': () => json(filterOptions),
+  '/api/v1/pipeline/stages': () => json(stages),
+}
+
 export const okRoutes: Routes = {
   '/api/health': () => json({ status: 'ok', service: 'chosen-one-api' }),
   '/api/auth/me': () => json(signedIn),
@@ -188,4 +415,5 @@ export const okRoutes: Routes = {
       can_view_history: false,
     }),
   'POST /api/auth/logout': () => json({ authenticated: false }),
+  ...pipelineRoutes,
 }

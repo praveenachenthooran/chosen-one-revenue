@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fetchAuth, signOut, type AuthUser } from './api'
 import ForecastWorkspace from './ForecastWorkspace'
+import PipelineView from './pipeline/PipelineView'
 import SignIn from './components/SignIn'
 
 type Health = { status: string; service: string }
@@ -73,6 +74,8 @@ export default function App() {
   const health = useHealth()
   const [auth, setAuth] = useState<AuthState>({ kind: 'loading' })
   const [attempt, setAttempt] = useState(0)
+  const [view, setView] = useState<'forecast' | 'pipeline'>('forecast')
+  const [openProjectId, setOpenProjectId] = useState<number | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -136,7 +139,33 @@ export default function App() {
         </div>
       </header>
 
-      <main className="app-main">
+      {auth.kind === 'signedIn' && (
+        <nav className="app-tabs" role="tablist" aria-label="Views">
+          {(
+            [
+              ['forecast', 'Forecast'],
+              ['pipeline', 'Pipeline'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              id={`tab-${id}`}
+              aria-selected={view === id}
+              className={`app-tab${view === id ? ' active' : ''}`}
+              onClick={() => {
+                setOpenProjectId(null)
+                setView(id)
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+      )}
+
+      <main className="app-main" role="tabpanel" aria-labelledby={`tab-${view}`}>
         {auth.kind === 'loading' && (
           <div className="state-box" role="status" aria-live="polite">
             <span className="spinner-border spinner-border-sm text-primary" aria-hidden="true" />
@@ -159,7 +188,19 @@ export default function App() {
             </button>
           </div>
         )}
-        {auth.kind === 'signedIn' && <ForecastWorkspace onSessionEnded={onSessionEnded} />}
+        {auth.kind === 'signedIn' && view === 'forecast' && (
+          <ForecastWorkspace key={openProjectId ?? 'forecast'} onSessionEnded={onSessionEnded} initialProjectId={openProjectId} />
+        )}
+        {auth.kind === 'signedIn' && view === 'pipeline' && (
+          <PipelineView
+            user={auth.user}
+            onSessionEnded={onSessionEnded}
+            onOpenProject={(projectId) => {
+              setOpenProjectId(projectId)
+              setView('forecast')
+            }}
+          />
+        )}
       </main>
     </div>
   )

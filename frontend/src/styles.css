@@ -94,3 +94,39 @@
 .history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; font-size: 0.82rem; }
 .history-list li { border-left: 3px solid #d5def4; padding-left: 0.6rem; }
 .d-contents { display: contents; }
+
+/* Pipeline (Milestone 3) */
+.app-tabs { display: flex; gap: 0.25rem; padding: 0 1.5rem; background: #fff; border-bottom: 1px solid rgb(23 33 58 / 8%); }
+.app-tab { border: 0; background: none; padding: 0.7rem 1rem; font-weight: 600; color: #5b657d; border-bottom: 3px solid transparent; }
+.app-tab.active { color: #2447c8; border-bottom-color: #2447c8; }
+.pipeline-layout { display: flex; gap: 1rem; align-items: flex-start; min-width: 0; }
+.pipeline-view { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+.sync-banner { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.5rem 0.9rem; border-radius: 0.6rem; font-size: 0.9rem; }
+.sync-ok { background: #eef3ff; color: #2c3e73; }
+.sync-warn { background: #fff3d9; color: #7a4c00; }
+.sync-bad { background: #fbe6e6; color: #a32626; }
+.awaiting { background: #fff; border: 1px solid #f0d7a1; border-radius: 0.75rem; padding: 0.75rem 1rem; }
+.filters { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.filters select, .filters input { width: auto; min-width: 9rem; }
+.summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; }
+.summary-card { background: #fff; border: 1px solid rgb(23 33 58 / 8%); border-radius: 0.75rem; padding: 0.8rem 1rem; display: flex; flex-direction: column; }
+.summary-card strong { font-size: 1.4rem; }
+.summary-total { background: #eef7f0; }
+.summary-label { color: #5b657d; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.monthly-table, .deals-table { background: #fff; border: 1px solid rgb(23 33 58 / 8%); border-radius: 0.75rem; }
+.monthly-table th[scope='row'] { position: sticky; left: 0; background: #fff; white-space: nowrap; }
+.chart-details { background: #fff; border: 1px solid rgb(23 33 58 / 8%); border-radius: 0.75rem; padding: 0.6rem 1rem; }
+.chart-box { height: 280px; margin-top: 0.75rem; }
+.deal-view-select { width: auto; }
+.deal-status { font-size: 0.75rem; font-weight: 600; padding: 0.1rem 0.55rem; border-radius: 999px; background: #e8edf7; color: #3a4666; white-space: nowrap; }
+.deal-weighted { background: #fff3d9; color: #7a4c00; }
+.deal-awaiting_confirmation { background: #ffe1c2; color: #8a3a00; }
+.deal-linked { background: #e3f5ea; color: #136c3a; }
+.deal-closed_lost { background: #fbe6e6; color: #a32626; }
+.overdue-badge, .unphased-badge { margin-left: 0.4rem; font-size: 0.7rem; font-weight: 700; padding: 0.1rem 0.45rem; border-radius: 999px; background: #a32626; color: #fff; }
+.unphased-badge { background: #6b7590; }
+.draft-box { border: 1px solid #f0d7a1; background: #fffaf0; border-radius: 0.6rem; padding: 0.7rem 0.8rem; margin-top: 0.75rem; }
+.findings-list { font-size: 0.82rem; padding-left: 1.1rem; margin: 0; }
+.stages-panel { background: #fff; border: 1px solid rgb(23 33 58 / 8%); border-radius: 0.75rem; padding: 0.6rem 1rem; }
+.stage-input { width: 90px; margin-left: auto; }
+@media (max-width: 900px) { .pipeline-layout { flex-direction: column; } .app-tabs { padding: 0 1rem; } }

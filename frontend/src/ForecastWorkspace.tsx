@@ -30,11 +30,17 @@ function isAbort(error: unknown) {
   return error instanceof DOMException && error.name === 'AbortError'
 }
 
-export default function ForecastWorkspace({ onSessionEnded }: { onSessionEnded: () => void }) {
+export default function ForecastWorkspace({
+  onSessionEnded,
+  initialProjectId = null,
+}: {
+  onSessionEnded: () => void
+  initialProjectId?: number | null
+}) {
   const [state, setState] = useState<State>({ kind: 'loading' })
   const [attempt, setAttempt] = useState(0)
   const [quickFilter, setQuickFilter] = useState('')
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [selectedId, setSelectedId] = useState<number | null>(initialProjectId)
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set())
   const [notice, setNotice] = useState<Notice | null>(null)
   const [revision, setRevision] = useState(0)
