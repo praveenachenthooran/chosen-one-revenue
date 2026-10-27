@@ -24,10 +24,13 @@ services:
       APP_ENV: development
       DATABASE_URL: postgresql+asyncpg://chosen_one_dev:chosen_one_dev_password@db:5432/chosen_one
       FRONTEND_URL: http://localhost:5173
+      # The supplied HubSpot export, mounted read-only below, so "Sync now" works in Compose.
+      HUBSPOT_WORKBOOK_PATH: /reference/03-demo-data/HubSpot_OnDeck_Dummy_2026-10-01.xlsx
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - ./reference:/reference:ro
     depends_on:
       db:
         condition: service_healthy

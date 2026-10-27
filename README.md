@@ -1,6 +1,6 @@
 # The Chosen One
 
-The Chosen One is BIG's internal revenue forecasting application. This repository contains the Milestone 0 foundation (React frontend, FastAPI backend, PostgreSQL, tests, local containers) and Milestone 1: the revenue data model, the Excel migration, a read-only forecast API and a read-only AG Grid forecast. Milestone 2 adds Google Workspace sign-in, role and row-level permissions, monthly editing and audit history. HubSpot sync and AI features are not implemented yet.
+The Chosen One is BIG's internal revenue forecasting application. This repository contains the Milestone 0 foundation (React frontend, FastAPI backend, PostgreSQL, tests, local containers) and Milestone 1: the revenue data model, the Excel migration, a read-only forecast API and a read-only AG Grid forecast. Milestone 2 adds Google Workspace sign-in, role and row-level permissions, monthly editing and audit history. Milestone 3 adds the read-only HubSpot pipeline: weighted deals, Closed Won drafts and combined totals. AI features are not implemented yet.
 
 ## Required tools
 
@@ -122,6 +122,32 @@ the real workbook is skipped when `reference/` is absent.
    you own (or open a project and edit its months), and see the entry under **Change history**.
 
 Backend tests mock Google entirely; no live sign-in or network access is needed to run them.
+
+## Milestone 3: HubSpot pipeline
+
+HubSpot deals appear as probability-weighted pipeline next to committed revenue (read-only integration;
+details and rules in [docs/milestone-3-notes.md](docs/milestone-3-notes.md)).
+
+1. Apply migrations: `cd backend` then `uv run alembic upgrade head` (adds the pipeline tables; existing
+   data is kept).
+2. Import the Chosen One workbook first if you have not (`uv run python -m app.migration`), so there are
+   forecast months and customers to match.
+3. Sync the supplied HubSpot export (safe to repeat; the default path is
+   `reference/03-demo-data/HubSpot_OnDeck_Dummy_2026-10-01.xlsx`):
+
+   ```powershell
+   uv run python -m app.pipeline sync          # add --file path/to/export.xlsx for another export
+   uv run python -m app.pipeline stages        # the probabilities in use
+   ```
+
+4. Open <http://localhost:5173>, sign in, and choose the **Pipeline** tab: committed / weighted / combined
+   totals, the monthly table, a collapsed line chart, filters (owner, TECH, region, industry, category,
+   customer), deal details, and drafts awaiting confirmation. Sales leadership and Administrators also get a
+   **Sync now** button; with Docker Compose it reads the mounted export.
+
+HubSpot settings are in `backend/.env.example` (`HUBSPOT_SOURCE`, `HUBSPOT_WORKBOOK_PATH`,
+`HUBSPOT_ACCESS_TOKEN` for the future live adapter, `DRAFT_CONFIRMATION_BUSINESS_DAYS`,
+`HUBSPOT_STALE_AFTER_MINUTES`).
 
 ## Environment variables
 
