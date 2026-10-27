@@ -1,6 +1,6 @@
 # The Chosen One
 
-The Chosen One is BIG's internal revenue forecasting application. This repository contains the Milestone 0 foundation (React frontend, FastAPI backend, PostgreSQL, tests, local containers) and Milestone 1: the revenue data model, the Excel migration, a read-only forecast API and a read-only AG Grid forecast. Sign-in, editing, HubSpot sync and AI features are not implemented yet.
+The Chosen One is BIG's internal revenue forecasting application. This repository contains the Milestone 0 foundation (React frontend, FastAPI backend, PostgreSQL, tests, local containers) and Milestone 1: the revenue data model, the Excel migration, a read-only forecast API and a read-only AG Grid forecast. Milestone 2 adds Google Workspace sign-in, role and row-level permissions, monthly editing and audit history. HubSpot sync and AI features are not implemented yet.
 
 ## Required tools
 
@@ -89,9 +89,10 @@ Vite proxies `/api/*` to FastAPI and removes the `/api` prefix, so `/api/health`
    1 = failed, 2 = imported but not reconciled. Running it again never duplicates data.
 
 3. Start the app (`docker compose up --build`, or run `uvicorn` and `npm run dev` as above) and open
-   <http://localhost:5173> for the forecast grid. Click a project name for its details. The grid is
-   read-only. The API is at <http://localhost:8000/docs> under `/v1` (projects, months, monthly totals,
-   import results); it is available only when `APP_ENV` is `development` or `test`.
+   <http://localhost:5173> for the forecast grid (sign-in is required since Milestone 2, see below).
+   Click a project name for its details. The API is at <http://localhost:8000/docs> under `/v1`
+   (projects, months, monthly totals, import results, edits, history); every `/v1` route requires a
+   signed-in, provisioned user.
 
 Assumptions, the PRD fiscal-year discrepancy and data-quality findings are in
 [docs/milestone-1-assumptions.md](docs/milestone-1-assumptions.md).
@@ -99,6 +100,28 @@ Assumptions, the PRD fiscal-year discrepancy and data-quality findings are in
 Backend tests need PostgreSQL running (`docker compose up -d db`). They create and use a separate
 `chosen_one_test` database on the same server and never touch the development data. The test that imports
 the real workbook is skipped when `reference/` is absent.
+
+## Milestone 2: sign in and edit
+
+1. **Configure Google sign-in** in `backend/.env` (copy from `backend/.env.example`; never commit it):
+   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `SESSION_SECRET`. The redirect URI
+   must be registered in Google Cloud exactly as written (`http://localhost:8000/auth/google/callback` by
+   default). Without credentials the app shows a "Google sign-in has not been configured" message.
+2. **Apply migrations** (`uv run alembic upgrade head`; this adds the Google identity, import baseline and
+   append-only audit changes and keeps existing data).
+3. **Provision yourself** (nobody can sign in until provisioned; run from `backend`):
+
+   ```powershell
+   uv run python -m app.provisioning grant --code AC --email <your-google-email> --role "Client Partner"
+   ```
+
+   `--code AC` adopts the imported Avery Chen, so the projects she owns become yours to edit. For
+   leadership/admin, use `--name "Your Name" --role "CRO / Sales Leadership"` instead of `--code`. Other
+   commands: `list`, `revoke`. Details and the role matrix: [docs/milestone-2-notes.md](docs/milestone-2-notes.md).
+4. Open <http://localhost:5173>, click **Sign in with Google**. Double-click a month cell on a project
+   you own (or open a project and edit its months), and see the entry under **Change history**.
+
+Backend tests mock Google entirely; no live sign-in or network access is needed to run them.
 
 ## Environment variables
 

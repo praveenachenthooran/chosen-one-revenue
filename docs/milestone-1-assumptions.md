@@ -76,5 +76,6 @@ the database to the cent in all 24 months (grand total $58,499,798.00).
   signals (stale rows, forecast-vs-actual mismatch) need data that arrives in later milestones.
 - **Grid totals row** shows the backend total for *all* projects; it does not recalculate when the
   grid's column filters change.
-- **Local-only API:** `/v1/*` responds 404 unless `APP_ENV` is `development` or `test`, because there is
-  no authentication yet.
+- **Local-only API (superseded in Milestone 2):** in Milestone 1 `/v1/*` answered 404 unless `APP_ENV` was
+  `development` or `test`, because there was no authentication. Milestone 2 replaces that gate with
+  sign-in on every route, in every environment (see `milestone-2-notes.md`).
