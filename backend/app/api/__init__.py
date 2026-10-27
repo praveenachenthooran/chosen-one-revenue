@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends
 
-from app.api import imports, projects
-from app.api.deps import require_local_development
+from app.api import edits, imports, projects
+from app.auth.deps import current_user
 
-# Read-only forecast API. Unauthenticated until Milestone 2, so local development only.
-router = APIRouter(prefix="/v1", dependencies=[Depends(require_local_development)])
+# Every forecast endpoint requires a signed-in, provisioned user. Row-level rules are enforced
+# per endpoint (see app.auth.permissions).
+router = APIRouter(prefix="/v1", dependencies=[Depends(current_user)])
 router.include_router(projects.router)
+router.include_router(edits.router)
 router.include_router(imports.router)

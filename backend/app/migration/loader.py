@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.auth.roles import ALL_ROLES, canonical_role
 from app.migration.workbook import CATEGORY_DESCRIPTIONS, ParsedProject, ParsedWorkbook
 from app.models import (
     Category,
@@ -71,11 +72,11 @@ async def _sync_reference_data(session: AsyncSession, parsed: ParsedWorkbook) ->
             session.add(Category(code=code, description=description))
 
     roles = {r.name: r for r in await session.scalars(select(Role))}
-    for user in parsed.users:
-        for role_name in user.roles:
-            if role_name not in roles:
-                roles[role_name] = Role(name=role_name)
-                session.add(roles[role_name])
+    wanted_roles = set(ALL_ROLES) | {canonical_role(r) for u in parsed.users for r in u.roles}
+    for role_name in sorted(wanted_roles):
+        if role_name not in roles:
+            roles[role_name] = Role(name=role_name)
+            session.add(roles[role_name])
 
     users = {
         u.code: u
@@ -89,21 +90,26 @@ async def _sync_reference_data(session: AsyncSession, parsed: ParsedWorkbook) ->
             user = User(code=source.code, name=source.name, roles=[])
             session.add(user)
             users[source.code] = user
+        if user.is_provisioned:
+            # Provisioning is an explicit administrative act: a re-import must never replace the
+            # email, roles or name that an administrator set for a signed-in person.
+            continue
         user.name, user.location, user.notes = source.name, source.location, source.notes
         if source.email != user.email:
             user.email = source.email
-        user.roles = [roles[r] for r in source.roles]
+        user.roles = [roles[canonical_role(r)] for r in source.roles]
     await session.flush()
     return users
 
 
 def _audit(
     run: ImportRun, project: Project, field: str, change_type: str, old: object, new: object,
-    month: date | None = None,
+    month: date | None = None, note: str | None = None,
 ) -> RevenueRevision:  # fmt: skip
     return RevenueRevision(
         project_id=project.id, month=month, field=field, change_type=change_type,
         old_value=_text(old), new_value=_text(new), actor_label=ACTOR_LABEL, import_run_id=run.id,
+        note=note,
     )  # fmt: skip
 
 
@@ -115,8 +121,15 @@ async def _upsert_project(
     customers: dict[str, Customer],
     users: dict[str, User],
     revenue: dict[date, ProjectMonthlyRevenue],
+    kept_edits: list[ImportIssue],
 ) -> str:
-    """Create or update one project. Returns 'created', 'updated' or 'unchanged'."""
+    """Create or update one project. Returns 'created', 'updated' or 'unchanged'.
+
+    Each month keeps two values: `baseline_amount` (what the workbook says, kept in step with
+    the workbook) and `amount` (the current forecast, which people may edit in the app). A month
+    whose current value differs from its old baseline was edited in the app, so a changed
+    workbook updates the baseline but never overwrites that edit; it is reported instead.
+    """
     customer = customers.get(source.customer)
     if customer is None:
         customer = Customer(name=source.customer)
@@ -202,27 +215,64 @@ async def _upsert_project(
             changed = True
 
     # Monthly revenue: exact decimal comparison, never rounded.
+    def kept(month: date, message: str, value: object) -> None:
+        kept_edits.append(
+            ImportIssue(
+                run_id=run.id, severity="warning", code="edited_in_app_kept", sheet="Forecast",
+                source_row_id=source.source_row_id, field=f"{month:%Y-%m}", value=_text(value),
+                message=message,
+            )
+        )  # fmt: skip
+
     for month, amount in source.months.items():
         row = revenue.get(month)
         if row is None:
             session.add(
                 ProjectMonthlyRevenue(
-                    project_id=project.id, month=month, amount=amount,
+                    project_id=project.id, month=month, amount=amount, baseline_amount=amount,
                     source_cell=source.cells.get(month),
                 )
             )  # fmt: skip
             if existing is not None:
                 audits.append(_audit(run, project, "revenue", "create", None, amount, month))
                 changed = True
-        elif row.amount != amount:
-            audits.append(_audit(run, project, "revenue", "update", row.amount, amount, month))
-            row.amount, row.source_cell = amount, source.cells.get(month)
+        elif row.baseline_amount != amount:
+            old_baseline, unedited = row.baseline_amount, row.amount == row.baseline_amount
+            row.baseline_amount, row.source_cell = amount, source.cells.get(month)
+            if unedited:
+                audits.append(_audit(run, project, "revenue", "update", row.amount, amount, month))
+                row.amount = amount
+            else:
+                audits.append(
+                    _audit(run, project, "baseline", "update", old_baseline, amount, month,
+                           "Workbook value changed; the in-app edit was kept")
+                )  # fmt: skip
+                kept(
+                    month,
+                    f"{month:%b %Y}: the workbook changed to {amount} but the value {row.amount} "
+                    "edited in the app was kept",
+                    amount,
+                )
             changed = True
     for month, row in revenue.items():
-        if month not in source.months:
+        if month in source.months or row.baseline_amount is None:
+            continue  # still in the workbook, or a month that exists only in the app
+        if row.amount == row.baseline_amount:
             audits.append(_audit(run, project, "revenue", "delete", row.amount, None, month))
             await session.delete(row)
-            changed = True
+        else:
+            audits.append(
+                _audit(run, project, "baseline", "update", row.baseline_amount, None, month,
+                       "Month is blank in the workbook now; the in-app edit was kept")
+            )  # fmt: skip
+            kept(
+                month,
+                f"{month:%b %Y} is blank in the workbook now but the value {row.amount} "
+                "edited in the app was kept",
+                None,
+            )
+            row.baseline_amount = None
+        changed = True
 
     session.add_all(audits)
     if status == "unchanged" and changed:
@@ -233,15 +283,16 @@ async def _upsert_project(
 async def _reconcile(
     session: AsyncSession, run: ImportRun, parsed: ParsedWorkbook, imported_ids: list[str]
 ) -> list[ImportReconciliation]:
+    # Compared with the baseline column: what the import loaded, whatever edits came later.
     totals: dict[date, Decimal] = {}
     if imported_ids:
         rows = await session.execute(
-            select(ProjectMonthlyRevenue.month, func.sum(ProjectMonthlyRevenue.amount))
+            select(ProjectMonthlyRevenue.month, func.sum(ProjectMonthlyRevenue.baseline_amount))
             .join(Project, Project.id == ProjectMonthlyRevenue.project_id)
             .where(Project.source_row_id.in_(imported_ids))
             .group_by(ProjectMonthlyRevenue.month)
         )
-        totals = {month: total for month, total in rows}
+        totals = {month: Decimal(total or 0) for month, total in rows}
 
     results: list[ImportReconciliation] = []
     for month in parsed.month_columns:
@@ -293,11 +344,12 @@ async def import_workbook(session: AsyncSession, parsed: ParsedWorkbook) -> Impo
             revenue_by_project.setdefault(row.project_id, {})[row.month] = row
 
         counts = {"created": 0, "updated": 0, "unchanged": 0}
+        kept_edits: list[ImportIssue] = []
         for source in parsed.projects:
             current = existing.get(source.source_row_id)
             revenue = revenue_by_project.get(current.id, {}) if current else {}
             outcome = await _upsert_project(
-                session, run, source, current, customers, users, revenue
+                session, run, source, current, customers, users, revenue, kept_edits
             )
             counts[outcome] += 1
         await session.flush()
@@ -310,6 +362,7 @@ async def import_workbook(session: AsyncSession, parsed: ParsedWorkbook) -> Impo
             )
             for i in parsed.issues
         ]  # fmt: skip
+        issues.extend(kept_edits)
         session.add_all(issues)
         reconciliation = await _reconcile(
             session, run, parsed, [p.source_row_id for p in parsed.projects]
@@ -319,7 +372,7 @@ async def import_workbook(session: AsyncSession, parsed: ParsedWorkbook) -> Impo
         run.projects_updated = counts["updated"]
         run.projects_unchanged = counts["unchanged"]
         run.rows_rejected = parsed.rejected_row_count
-        run.warnings = sum(1 for i in parsed.issues if i.severity == "warning")
+        run.warnings = sum(1 for i in issues if i.severity == "warning")
         run.reconciled = all(r.matches for r in reconciliation)
         run.status = "completed"
         run.finished_at = datetime.now(UTC)

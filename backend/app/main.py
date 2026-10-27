@@ -1,3 +1,4 @@
+import secrets
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -7,8 +8,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
+from starlette.middleware.sessions import SessionMiddleware
 
 from app.api import router as api_router
+from app.auth.google import router as auth_router
 from app.config import get_settings
 from app.database import engine
 
@@ -31,6 +34,18 @@ app.add_middleware(
 )
 
 
+# Signed, HttpOnly session cookie. SameSite=Lax is required for the Google redirect back to us;
+# state-changing requests are additionally protected by a CSRF token (see app.auth.deps).
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.require_session_secret() or secrets.token_urlsafe(48),
+    session_cookie="chosen_one_session",
+    max_age=settings.session_max_age_seconds,
+    same_site="lax",
+    https_only=settings.cookie_secure,
+)
+
+app.include_router(auth_router)
 app.include_router(api_router)
 
 

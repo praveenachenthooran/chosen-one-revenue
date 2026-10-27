@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Table, false
+from datetime import datetime
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Table, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, CreatedAt
@@ -37,6 +39,10 @@ class User(Base):
     location: Mapped[str | None] = mapped_column(String(64))
     notes: Mapped[str | None] = mapped_column(String(500))
     is_provisioned: Mapped[bool] = mapped_column(Boolean, server_default=false())
+    # Google's stable account identifier (the OIDC "sub" claim), bound on first sign-in. Once
+    # set it is the authoritative identity; the email is only used for that first match.
+    google_sub: Mapped[str | None] = mapped_column(String(64), unique=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[CreatedAt]
 
     roles: Mapped[list[Role]] = relationship(secondary=user_roles, order_by=Role.name)

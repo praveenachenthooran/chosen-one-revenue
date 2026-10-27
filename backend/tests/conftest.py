@@ -7,7 +7,7 @@ and truncated between tests. The development database is never touched.
 
 import asyncio
 import os
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 
 import asyncpg  # pyright: ignore[reportMissingTypeStubs]
@@ -15,6 +15,8 @@ import pytest
 import pytest_asyncio
 from alembic import command
 from alembic.config import Config
+from authlib.integrations.starlette_client import StarletteOAuth2App
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import (
@@ -31,8 +33,10 @@ TEST_DB_URL = make_url(os.environ.get("TEST_DATABASE_URL", DEV_URL)).set(databas
 os.environ["DATABASE_URL"] = TEST_DB_URL.render_as_string(hide_password=False)
 os.environ["APP_ENV"] = "test"
 
+from app.config import get_settings  # noqa: E402
 from app.database import get_db_session  # noqa: E402
 from app.main import app  # noqa: E402
+from tests.helpers import FakeGoogle, csrf_headers, make_settings, sign_in  # noqa: E402
 from tests.workbook_builder import WorkbookBuilder  # noqa: E402
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -107,3 +111,53 @@ def override_db(engine: AsyncEngine) -> Callable[[], None]:
 @pytest.fixture
 def builder(tmp_path: Path) -> WorkbookBuilder:
     return WorkbookBuilder(tmp_path / "chosen_one_test.xlsx")
+
+
+@pytest.fixture
+def fake_google(monkeypatch: pytest.MonkeyPatch) -> FakeGoogle:
+    """Replace Google's token exchange; the real state/redirect handling is left in place."""
+    google = FakeGoogle()
+
+    async def authorize_access_token(self: object, request: object, **kwargs: object) -> object:
+        return await google.authorize_access_token(self, request, **kwargs)
+
+    monkeypatch.setattr(StarletteOAuth2App, "authorize_access_token", authorize_access_token)
+    return google
+
+
+@pytest_asyncio.fixture
+async def client(
+    engine: AsyncEngine, override_db: Callable[[], None]
+) -> AsyncIterator[AsyncClient]:
+    """An anonymous client with the test database and Google-configured settings."""
+    override_db()
+    app.dependency_overrides[get_settings] = lambda: make_settings()
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as http:
+        yield http
+    app.dependency_overrides.clear()
+
+
+SignedIn = Callable[[str], Awaitable[tuple[AsyncClient, dict[str, str]]]]
+
+
+@pytest_asyncio.fixture
+async def as_user(client: AsyncClient, fake_google: FakeGoogle) -> AsyncIterator[SignedIn]:
+    """Sign a *new* client in as the given (already provisioned) email.
+
+    Returns (client, csrf_headers). Each call gets its own cookie jar, so several people can act
+    in one test.
+    """
+    clients: list[AsyncClient] = []
+
+    async def factory(email: str) -> tuple[AsyncClient, dict[str, str]]:
+        http = AsyncClient(transport=client._transport, base_url="http://test")  # pyright: ignore[reportPrivateUsage]
+        clients.append(http)
+        response = await sign_in(http, fake_google, email=email)
+        assert response.status_code == 303, response.text
+        assert "auth_error" not in response.headers["location"], response.headers["location"]
+        return http, await csrf_headers(http)
+
+    yield factory
+    for http in clients:
+        await http.aclose()

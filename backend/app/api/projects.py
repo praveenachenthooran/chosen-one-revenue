@@ -17,6 +17,8 @@ from app.api.queries import (
     month_columns,
     total_revenue,
 )
+from app.auth.deps import CurrentUser
+from app.auth.permissions import can_view_history, edit_decision
 from app.database import get_db_session
 from app.fiscal import fiscal_period, fiscal_year
 from app.models import (
@@ -55,7 +57,11 @@ def _owner(project: Project, role: str) -> OwnerOut | None:
 
 
 def _summary(
-    project: Project, total: Decimal, attention: int, monthly: dict[date, Decimal] | None
+    project: Project,
+    total: Decimal,
+    attention: int,
+    monthly: dict[date, Decimal] | None,
+    can_edit: bool,
 ) -> ProjectSummary:
     return ProjectSummary(
         id=project.id,
@@ -75,6 +81,7 @@ def _summary(
         total_revenue=total,
         attention_count=attention,
         last_updated=project.source_last_updated,
+        can_edit=can_edit,
         monthly=monthly,
     )
 
@@ -108,6 +115,7 @@ async def list_months(session: Session) -> MonthsResponse:
 @router.get("/projects", response_model=ProjectPage)
 async def list_projects(
     session: Session,
+    user: CurrentUser,
     filters: Filters,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=500)] = 50,
@@ -162,7 +170,13 @@ async def list_projects(
 
     return ProjectPage(
         items=[
-            _summary(p, Decimal(total), int(attention), monthly[p.id] if include_revenue else None)
+            _summary(
+                p,
+                Decimal(total),
+                int(attention),
+                monthly[p.id] if include_revenue else None,
+                edit_decision(user, p).allowed,
+            )
             for p, total, attention in rows
         ],
         page=page,
@@ -197,6 +211,8 @@ async def _project_months(session: AsyncSession, project_id: int) -> list[Monthl
             month=r.month,
             fiscal_year=fiscal_year(r.month),
             amount=r.amount,
+            baseline_amount=r.baseline_amount,
+            edited=r.baseline_amount != r.amount,
             source_cell=r.source_cell,
         )
         for r in rows
@@ -204,7 +220,7 @@ async def _project_months(session: AsyncSession, project_id: int) -> list[Monthl
 
 
 @router.get("/projects/{project_id}", response_model=ProjectDetail)
-async def get_project(project_id: int, session: Session) -> ProjectDetail:
+async def get_project(project_id: int, session: Session, user: CurrentUser) -> ProjectDetail:
     project = await _load_project(session, project_id)
     months = await _project_months(session, project_id)
     issues = await session.scalars(
@@ -218,7 +234,13 @@ async def get_project(project_id: int, session: Session) -> ProjectDetail:
     )
     attention = [AttentionOut(code=i.code, message=i.message, field=i.field) for i in issues]
     total = sum((m.amount for m in months), Decimal("0.00"))
-    summary = _summary(project, total, len(attention), {m.month: m.amount for m in months})
+    summary = _summary(
+        project,
+        total,
+        len(attention),
+        {m.month: m.amount for m in months},
+        edit_decision(user, project).allowed,
+    )
     return ProjectDetail(
         **summary.model_dump(exclude={"monthly"}),
         monthly=summary.monthly,
@@ -227,6 +249,7 @@ async def get_project(project_id: int, session: Session) -> ProjectDetail:
         owners=[OwnerOut(role=o.role, code=o.user.code, name=o.user.name) for o in project.owners],
         monthly_revenue=months,
         attention=attention,
+        can_view_history=can_view_history(user, project),
     )
 
 
@@ -243,12 +266,24 @@ async def get_project_revenue(project_id: int, session: Session) -> ProjectReven
 
 
 @router.get("/revenue/monthly-totals", response_model=TotalsResponse)
-async def monthly_totals(session: Session, filters: Filters) -> TotalsResponse:
+async def monthly_totals(
+    session: Session,
+    filters: Filters,
+    basis: Annotated[
+        Literal["current", "baseline"],
+        Query(description="current = latest forecast; baseline = as loaded by the Excel import"),
+    ] = "current",
+) -> TotalsResponse:
     """Total revenue per fiscal month and per fiscal year for the filtered projects."""
+    column = (
+        ProjectMonthlyRevenue.amount
+        if basis == "current"
+        else ProjectMonthlyRevenue.baseline_amount
+    )
     stmt = (
         select(
             ProjectMonthlyRevenue.month,
-            func.sum(ProjectMonthlyRevenue.amount),
+            func.coalesce(func.sum(column), 0),
             func.count(func.distinct(ProjectMonthlyRevenue.project_id)),
         )
         .join(Project, Project.id == ProjectMonthlyRevenue.project_id)
@@ -256,7 +291,7 @@ async def monthly_totals(session: Session, filters: Filters) -> TotalsResponse:
         .group_by(ProjectMonthlyRevenue.month)
     )
     rows = {
-        month: (total, count)
+        month: (Decimal(total or 0), count)
         for month, total, count in (await session.execute(apply_filters(stmt, filters)))
     }
     zero = Decimal("0.00")
@@ -281,6 +316,7 @@ async def monthly_totals(session: Session, filters: Filters) -> TotalsResponse:
         ).subquery()
     )
     return TotalsResponse(
+        basis=basis,
         months=month_totals,
         fiscal_years=[
             FiscalYearTotal(

@@ -42,7 +42,10 @@ class ProjectMonthlyRevenue(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
     month: Mapped[date] = mapped_column(Date)
-    amount: Mapped[Decimal] = mapped_column(Money)
+    amount: Mapped[Decimal] = mapped_column(Money)  # the current forecast; editable in the app
+    # The value the Excel import loaded for this month. Edits never change it, so the original
+    # import stays reproducible. NULL means the month was added in the app (blank in the source).
+    baseline_amount: Mapped[Decimal | None] = mapped_column(Money)
     source_cell: Mapped[str | None] = mapped_column(String(32))  # e.g. Forecast!I3
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
