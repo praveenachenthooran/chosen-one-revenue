@@ -166,3 +166,26 @@ appear until `docker compose restart frontend`. Running `npm run dev` in `fronte
   Actual bars matter.
 * **Investigations call Claude** when the AI key and data-use switch are on, and take roughly 20 to 40 seconds.
 * Accepting or dismissing a finding is permanent for that finding, so rehearse on a finding you do not need.
+
+## Verification status (as of the 2 PM submission)
+
+**Browser-verified, signed in as the Administrator account** (Google SSO, real backend and database): Revenue
+overview (grouped Estimated / Actual / Potential bars, near-term band, fiscal-year outlook, forecast changes, risks),
+All projects, project page (editable months, original-import versus current-forecast graph, history), Pipeline,
+Checks, Snapshots (including integrity check), Actuals, Accuracy, Monthly grid, the Revenue Detective (a real Claude
+investigation), Excel and CSV export downloads, and an edit that was changed and restored. Checked at 1440 × 900,
+1920 × 1080 and 1024 × 768 where noted in the QA log; the final smoke test covered all eight screens with no console
+errors, no failed requests and no horizontal overflow.
+
+**Not browser-verified under their own accounts: the Client Partner (My projects) and Commercial Owner (Portfolio)
+experiences.** Only one account is provisioned in this environment (an Administrator). The demo dataset's Client
+Partner, Commercial Owner and CRO people carry placeholder `@example.com` emails and are not provisioned, so they cannot
+sign in with Google, and permissions were deliberately not changed to make that possible. Those two experiences are
+covered by automated tests only (`App.test.tsx`, `PortfolioView.test.tsx`, `ProjectPage.test.tsx`, `status.test.ts`,
+`roles.test.ts`): the status rules, who sees which landing page, read-only behaviour for projects a person does not own,
+collapsed graphs, filters, exports and the edit-then-chart flow. To verify them live, provision test accounts with
+`python -m app.provisioning grant --email <google-email> --code JM --role "Client Partner"` (and `--code AF --role
+"Commercial Owner"`), then walk the demo paths above.
+
+The recorded demo shows these workflows with the Administrator account. Each role's walkthrough demonstrates that
+role's product workflow; it is **not** a session authenticated as that role.
