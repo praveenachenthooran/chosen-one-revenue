@@ -4,7 +4,7 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import AnyHttpUrl, SecretStr, field_validator
+from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 MIN_SESSION_SECRET_LENGTH = 32
@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     session_secret: SecretStr | None = None
     session_max_age_seconds: int = 8 * 60 * 60
     anthropic_api_key: SecretStr | None = None
+    # First month of the reporting fiscal year (1-12). April matches the supplied workbook and
+    # PRD section 5; the latest business meeting said September. Left at April until the business
+    # confirms; labels are computed on the fly, so changing it rewrites no stored data.
+    fiscal_year_start_month: int = Field(default=4, ge=1, le=12)
 
     # --- HubSpot pipeline (Milestone 3) ---
     # "workbook" reads the supplied export; "api" is reserved for the future read-only live adapter.
