@@ -17,6 +17,7 @@ is always the engine's deterministic figure, never a number from a model.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -31,6 +32,7 @@ from app.models import Investigation, QaFinding, QaFindingEvent, User
 from app.qa.tools import TOOLS, ToolContext, call_tool
 
 MAX_ROUNDS = 6
+MAX_REJECTIONS = 2  # times a submitted report may be sent back before falling back
 STALE_AFTER = timedelta(minutes=10)
 Status = Literal["confirmed", "hypothesis", "insufficient_evidence"]
 
@@ -88,11 +90,60 @@ def sanitise(report: ModelReport, retrieved: set[str]) -> ModelReport:
     return report.model_copy(update={"causes": causes})
 
 
-def finish(report: ModelReport, finding: QaFinding, ctx: ToolContext) -> InvestigationResult:
+def own_refs(finding: QaFinding) -> set[str]:
+    """Records the finding itself already cites; a cause may reference them without a lookup."""
     own = {f"project:{pid}" for pid in [finding.project_id, *finding.related_project_ids] if pid}
     if finding.opportunity_id:
-        own.add(f"deal:{finding.opportunity_id}")  # the finding itself already cites these records
-    report = sanitise(report, ctx.refs | own)
+        own.add(f"deal:{finding.opportunity_id}")
+    return own
+
+
+_PLACEHOLDER = re.compile(
+    r"placeholder|lorem ipsum|\btbd\b|\btodo\b|^\W*(n/?a|none|null|test|string|summary|sample|example)\W*$",
+    re.IGNORECASE,
+)
+MIN_SUMMARY = 40
+MIN_STATEMENT = 15
+
+
+def report_problem(report: ModelReport, retrieved: set[str], lookups: int) -> str | None:
+    """Why a submitted report is not a real explanation (None if it is). The text goes back to the
+    model so it can correct itself; a report that stays unusable is replaced by the deterministic one."""
+    if lookups == 0:
+        return (
+            "Look up evidence with the read-only tools before submitting; no lookup has succeeded."
+        )
+    if len(report.summary.strip()) < MIN_SUMMARY or _PLACEHOLDER.search(report.summary):
+        return (
+            f"The summary must be a real plain-language explanation of at least {MIN_SUMMARY} "
+            "characters, not placeholder text: say what changed and what the records show."
+        )
+    if not report.causes:
+        return (
+            "Give at least one cause. If the records cannot explain the finding, add a cause with status "
+            "insufficient_evidence that says what is missing."
+        )
+    for cause in report.causes:
+        if len(cause.statement.strip()) < MIN_STATEMENT or _PLACEHOLDER.search(cause.statement):
+            return (
+                "Every cause needs a specific statement about this finding, not placeholder text."
+            )
+    grounded = any(
+        c.status == "insufficient_evidence" or any(r in retrieved for r in c.evidence_refs)
+        for c in report.causes
+    )
+    if not grounded:
+        return (
+            "No cause cites a record you retrieved. Cite references returned by the tools (for example "
+            "project:12 or revision:34), or classify the cause as insufficient_evidence."
+        )
+    if not report.next_steps:
+        return "Give at least one concrete next step and who should take it."
+    return None
+
+
+def finish(report: ModelReport, finding: QaFinding, ctx: ToolContext) -> InvestigationResult:
+    report = sanitise(report, ctx.refs | own_refs(finding))
     return InvestigationResult(
         **report.model_dump(),
         financial_impact=Impact(
@@ -366,12 +417,31 @@ Rules you must follow:
   Never present a hypothesis as fact and never cite a reference you did not retrieve.
 - Do not invent figures. The financial impact is calculated by the system; do not state your own.
 - If a tool says you are not authorized, say so as a limitation; do not try to work around it.
-- Finish by calling submit_investigation exactly once with your structured report."""
+- The report must be a real explanation, never placeholder or sample text: a plain-language summary of
+  what happened and why, at least one cause backed by records you retrieved (or marked
+  insufficient_evidence, with what is missing stated in limitations), and concrete next steps.
+- Wait for the tool results before concluding. Then finish by calling submit_investigation exactly once,
+  on its own and last, with your structured report. A report that is empty or generic is rejected."""
+
+
+def _submit_schema() -> dict[str, Any]:
+    """The report schema shown to the model, with the lower bounds the server enforces in report_problem."""
+    schema = ModelReport.model_json_schema()
+    schema["properties"]["summary"]["minLength"] = MIN_SUMMARY
+    schema["properties"]["causes"]["minItems"] = 1
+    schema["properties"]["next_steps"]["minItems"] = 1
+    schema["$defs"]["Cause"]["properties"]["statement"]["minLength"] = MIN_STATEMENT
+    schema["description"] = (
+        "The investigation report: a real explanation of the finding grounded in retrieved records."
+    )
+    return schema
+
 
 SUBMIT_TOOL: dict[str, Any] = {
     "name": "submit_investigation",
-    "description": "Submit the final structured investigation report. Call this once, last.",
-    "input_schema": ModelReport.model_json_schema(),
+    "description": "Submit the final investigation report once you have the tool results. Call this alone, "
+    "last, and only with real content: placeholder or empty reports are rejected.",
+    "input_schema": _submit_schema(),
 }
 
 
@@ -420,6 +490,7 @@ async def claude_report(
     transcript.append({"role": "system", "content": SYSTEM_PROMPT})
     transcript.append({"role": "user", "content": messages[0]["content"]})
     tools = [t.schema() for t in TOOLS.values()] + [SUBMIT_TOOL]
+    rejections = 0
     for _ in range(MAX_ROUNDS):
         response = await client.messages.create(
             model=settings.anthropic_model,
@@ -439,17 +510,36 @@ async def claude_report(
         if not uses:
             raise ValueError("The model ended without submitting a report.")
         results: list[dict[str, Any]] = []
+        submits = [u for u in uses if u["name"] == SUBMIT_TOOL["name"]]
         for use in uses:
-            if use["name"] == "submit_investigation":
-                try:
-                    return ModelReport.model_validate(use["input"])
-                except ValidationError as exc:
-                    raise ValueError(f"The submitted report was invalid: {str(exc)[:300]}") from exc
+            if use in submits:
+                continue
             outcome = await call_tool(ctx, use["name"], use["input"])
             results.append(
                 {"type": "tool_result", "tool_use_id": use["id"],
                  "content": json.dumps({"data": outcome.data, "refs": outcome.refs}, default=str)}
             )  # fmt: skip
+        if submits:
+            problem: str | None = None
+            if len(submits) > 1 or len(submits) < len(uses):
+                problem = "Call submit_investigation once, on its own, after you have read the tool results."
+            else:
+                try:
+                    candidate = ModelReport.model_validate(submits[0]["input"])
+                except ValidationError as exc:
+                    problem = f"The submitted report was invalid: {str(exc)[:300]}"
+                else:
+                    lookups = sum(1 for s in ctx.steps if s["outcome"] == "ok")
+                    problem = report_problem(candidate, ctx.refs | own_refs(finding), lookups)
+                    if problem is None:
+                        return candidate
+            rejections += 1
+            if rejections > MAX_REJECTIONS:
+                raise ValueError(f"The submitted report was rejected: {problem}")
+            for use in submits:
+                results.append(
+                    {"type": "tool_result", "tool_use_id": use["id"], "is_error": True, "content": problem}
+                )  # fmt: skip
         messages.append({"role": "user", "content": results})
         transcript.append(
             {

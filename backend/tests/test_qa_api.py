@@ -688,8 +688,18 @@ def reply(*blocks: Any) -> Any:
 
 
 def report(causes: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:
-    return {"summary": "R3020 jumps 70% with no reason.", "causes": causes, "next_steps": [{"action": "Ask the owner.", "who": "Avery Chen"}],
+    return {"summary": "R3020 jumps 70% in one month and no reason code is recorded for it.", "causes": causes, "next_steps": [{"action": "Ask the owner.", "who": "Avery Chen"}],
             "confidence": "medium", "limitations": [], **extra}  # fmt: skip
+
+
+def GROUNDED(pid: int, status: str = "confirmed") -> list[dict[str, Any]]:  # noqa: N802
+    return [
+        {
+            "statement": "The row has no recorded reason code for the jump.",
+            "status": status,
+            "evidence_refs": [f"project:{pid}"] if status == "confirmed" else [],
+        }
+    ]
 
 
 async def test_claude_investigation_uses_tools_then_submits_a_checked_report(
@@ -800,7 +810,7 @@ async def test_claude_can_only_see_what_the_requester_can_see(qa: Seed, as_user:
     fake = FakeAnthropic(
         [
             reply(tool_use("get_project_history", {"project_id": other}, "a")),
-            reply(tool_use("submit_investigation", report([]), "b")),
+            reply(tool_use("submit_investigation", report(GROUNDED(pid)), "b")),
         ]
     )
     use_ai(lambda _s: fake)
@@ -816,34 +826,21 @@ async def test_unknown_tool_requests_do_not_derail_claude(qa: Seed, as_user: Sig
     target = await finding_for(http, "stale_row", "R3010")
     fake = FakeAnthropic(
         [
-            reply(tool_use("edit_revenue", {"project_id": 1, "amount": 0}, "a")),
             reply(
-                tool_use(
-                    "submit_investigation",
-                    report(
-                        [
-                            {
-                                "statement": "Not reviewed.",
-                                "status": "hypothesis",
-                                "evidence_refs": [],
-                            }
-                        ]
-                    ),
-                    "b",
-                )
+                tool_use("edit_revenue", {"project_id": 1, "amount": 0}, "a"),
+                tool_use("get_project_owners", {"project_id": target["project_id"]}, "o"),
             ),
+            reply(tool_use("submit_investigation", report(GROUNDED(target["project_id"])), "b")),
         ]
     )
     use_ai(lambda _s: fake)
     done = await investigate(http, headers, target["id"])
-    assert done["mode"] == "ai" and done["steps"] == [
-        {
-            "tool": "edit_revenue",
-            "arguments": {"project_id": 1, "amount": 0},
-            "refs": [],
-            "outcome": "unknown_tool",
-        }
-    ]
+    assert done["mode"] == "ai" and done["steps"][0] == {
+        "tool": "edit_revenue",
+        "arguments": {"project_id": 1, "amount": 0},
+        "refs": [],
+        "outcome": "unknown_tool",
+    }
     assert (
         await qa.session.scalar(
             text("SELECT count(*) FROM revenue_revisions WHERE new_value = '0'")
@@ -857,7 +854,16 @@ async def test_unknown_tool_requests_do_not_derail_claude(qa: Seed, as_user: Sig
     [
         (RuntimeError("connection refused"), "RuntimeError"),
         ([reply(SimpleNamespace(type="text", text="I cannot do this"))], "without submitting"),
-        ([reply(tool_use("submit_investigation", {"summary": "x"}, "a"))], "invalid"),
+        (
+            [
+                reply(tool_use("get_project_owners", {"project_id": 1}, "o")),
+                *[
+                    reply(tool_use("submit_investigation", {"summary": "x"}, f"s{i}"))
+                    for i in range(3)
+                ],
+            ],
+            "invalid",
+        ),
     ],
     ids=["api-error", "no-report", "invalid-report"],
 )
@@ -876,6 +882,136 @@ async def test_any_claude_problem_falls_back_to_the_deterministic_investigator(
         done["result"]["causes"]
         and done["result"]["financial_impact"]["amount"] == target["financial_impact"]
     )
+
+
+PLACEHOLDER_REPORT = {
+    "causes": [],
+    "report": None,
+    "summary": "placeholder",
+    "confidence": "low",
+    "next_steps": [],
+}
+
+
+async def test_a_placeholder_report_is_sent_back_and_the_model_corrects_it(
+    qa: Seed, as_user: SignedIn
+) -> None:
+    """Regression: Claude submitted summary 'placeholder' with no causes and it was stored as the result."""
+    http, headers = await as_user(ADMIN)
+    target = await finding_for(http, "mom_anomaly", "R3020")
+    pid = target["project_id"]
+    fake = FakeAnthropic(
+        [
+            reply(tool_use("get_project_history", {"project_id": pid}, "h")),
+            reply(tool_use("submit_investigation", PLACEHOLDER_REPORT, "p")),
+            reply(tool_use("submit_investigation", report(GROUNDED(pid)), "r")),
+        ]
+    )
+    use_ai(lambda _s: fake)
+    done = await investigate(http, headers, target["id"])
+
+    assert done["mode"] == "ai" and done["fallback_reason"] is None
+    assert done["result"]["summary"] != "placeholder" and done["result"]["causes"]
+    assert done["result"]["financial_impact"]["amount"] == "21000.00"
+    rejected = fake.calls[2]["messages"][4]["content"][0]  # the model was told why, as a tool error
+    assert rejected["is_error"] is True and rejected["tool_use_id"] == "p"
+    assert "placeholder" in rejected["content"]
+
+
+@pytest.mark.parametrize(
+    ("bad", "why"),
+    [
+        (PLACEHOLDER_REPORT, "placeholder"),
+        (report([]), "at least one cause"),
+        (report(GROUNDED(0), summary="Too short."), "summary"),
+        (
+            report([{"statement": "TBD", "status": "hypothesis", "evidence_refs": []}]),
+            "specific statement",
+        ),
+        (
+            report(
+                [
+                    {
+                        "statement": "A claim with a made-up record.",
+                        "status": "confirmed",
+                        "evidence_refs": ["revision:99999"],
+                    }
+                ]
+            ),
+            "retrieved",
+        ),
+        (report(GROUNDED(0), next_steps=[]), "next step"),
+    ],
+    ids=["placeholder", "no-causes", "short-summary", "tbd-cause", "ungrounded", "no-steps"],
+)
+async def test_a_report_that_stays_unusable_falls_back_with_a_real_explanation(
+    qa: Seed, as_user: SignedIn, bad: dict[str, Any], why: str
+) -> None:
+    http, headers = await as_user(ADMIN)
+    target = await finding_for(http, "mom_anomaly", "R3020")
+    pid = target["project_id"]
+    if bad.get("summary") != "placeholder" and bad.get("causes") and "project:0" in str(bad):
+        bad = {**bad, "causes": GROUNDED(pid)}
+    fake = FakeAnthropic(
+        [
+            reply(tool_use("get_project_history", {"project_id": pid}, "h")),
+            *[reply(tool_use("submit_investigation", bad, f"s{i}")) for i in range(3)],
+        ]
+    )
+    use_ai(lambda _s: fake)
+    done = await investigate(http, headers, target["id"])
+
+    assert done["status"] == "completed" and done["mode"] == "deterministic"
+    assert "rejected" in done["fallback_reason"] and why in done["fallback_reason"]
+    result = done["result"]
+    assert result["summary"] != "placeholder" and len(result["summary"]) > 40 and result["causes"]
+    assert result["financial_impact"]["source"] == "deterministic"
+    assert len(fake.calls) == 4  # the model got two chances to repair it, then we stopped
+
+
+async def test_a_report_submitted_before_the_lookups_return_is_not_accepted(
+    qa: Seed, as_user: SignedIn
+) -> None:
+    http, headers = await as_user(ADMIN)
+    target = await finding_for(http, "mom_anomaly", "R3020")
+    pid = target["project_id"]
+    fake = FakeAnthropic(
+        [
+            reply(  # looks things up and submits in the same turn, before seeing any result
+                tool_use("get_project_history", {"project_id": pid}, "h"),
+                tool_use("submit_investigation", PLACEHOLDER_REPORT, "p"),
+            ),
+            reply(tool_use("submit_investigation", report(GROUNDED(pid)), "r")),
+        ]
+    )
+    use_ai(lambda _s: fake)
+    done = await investigate(http, headers, target["id"])
+
+    assert done["mode"] == "ai" and done["result"]["summary"] != "placeholder"
+    ids = {r["tool_use_id"] for r in fake.calls[1]["messages"][2]["content"]}
+    assert ids == {"h", "p"}  # every tool call is answered, and the early submit was refused
+
+
+async def test_the_model_is_shown_the_strict_report_schema_and_rules(
+    qa: Seed, as_user: SignedIn
+) -> None:
+    http, headers = await as_user(ADMIN)
+    target = await finding_for(http, "mom_anomaly", "R3020")
+    pid = target["project_id"]
+    fake = FakeAnthropic(
+        [
+            reply(tool_use("get_project_history", {"project_id": pid}, "h")),
+            reply(tool_use("submit_investigation", report(GROUNDED(pid)), "r")),
+        ]
+    )
+    use_ai(lambda _s: fake)
+    await investigate(http, headers, target["id"])
+    schema = next(t for t in fake.calls[0]["tools"] if t["name"] == "submit_investigation")[
+        "input_schema"
+    ]
+    assert schema["properties"]["causes"]["minItems"] == 1
+    assert schema["properties"]["summary"]["minLength"] >= 40
+    assert "never placeholder" in fake.calls[0]["system"]
 
 
 async def test_the_model_running_out_of_steps_falls_back(qa: Seed, as_user: SignedIn) -> None:
@@ -921,8 +1057,13 @@ async def test_the_monthly_ai_call_limit_is_enforced(qa: Seed, as_user: SignedIn
     findings = (await get(http, "/v1/qa/findings"))["items"][:3]
 
     def script() -> FakeAnthropic:
-        ok = report([{"statement": "ok", "status": "hypothesis", "evidence_refs": []}])
-        return FakeAnthropic([reply(tool_use("submit_investigation", ok, "a"))])
+        ok = report(GROUNDED(0, status="insufficient_evidence"))
+        return FakeAnthropic(
+            [
+                reply(tool_use("get_project_owners", {"project_id": 1}, "o")),
+                reply(tool_use("submit_investigation", ok, "a")),
+            ]
+        )
 
     use_ai(lambda _s: script(), ai_monthly_call_limit=2)
     modes = [(await investigate(http, headers, f["id"]))["mode"] for f in findings]

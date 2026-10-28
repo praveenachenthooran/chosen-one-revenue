@@ -60,6 +60,13 @@ they will fare on unseen real errors.
   rounds) and ends by submitting its report. Prompts, tool calls and outputs are stored on the investigation
   (PRD: logged). Data sent: the finding and the tool results (names of projects, customers, owners and amounts); no
   email addresses and no credentials.
+* **A report must be a real explanation.** Before a submitted report is accepted it must follow at least one
+  successful lookup, be submitted on its own (not in the same turn as the lookups), have a plain-language summary,
+  at least one specific cause that cites a retrieved record or is marked `insufficient_evidence`, and at least one
+  next step; "placeholder", empty or generic text is refused. A refused report goes back to the model as a tool
+  error saying why (twice at most); if it is still unusable the deterministic investigator answers and the reason
+  is stored. (Found in manual testing: Claude once submitted `summary: "placeholder"` with no causes, which was
+  stored as the result.)
 * **Fallback.** Any problem (no key, no approval, limit reached, API error, invalid or missing report, too many
   steps) is answered by the deterministic investigator, which follows fixed steps with the same tools. The reason is
   stored and shown. Claude was never called against the real API in this work: all tests use a scripted fake client.
