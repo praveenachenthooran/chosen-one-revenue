@@ -275,7 +275,7 @@ async def export_current(
     )
     return await _send(
         session, user, data, source="current", snapshot_id=None, file_format=file_format,
-        view=view, stem=f"chosen-one-forecast-{now:%Y%m%dT%H%MZ}",
+        view=view, stem=f"biggie-revenue-forecast-{now:%Y%m%dT%H%MZ}",
     )  # fmt: skip
 
 
@@ -310,7 +310,7 @@ async def export_snapshot(
     )
     return await _send(
         session, user, data, source="snapshot", snapshot_id=snapshot.id, file_format=file_format,
-        view=view, stem=f"chosen-one-snapshot-{snapshot.id}-{snapshot.period_month:%Y-%m}",
+        view=view, stem=f"biggie-revenue-snapshot-{snapshot.id}-{snapshot.period_month:%Y-%m}",
     )  # fmt: skip
 
 
