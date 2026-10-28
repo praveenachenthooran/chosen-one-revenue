@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.models import (
+    ActualsUpload,
     Base,
     Category,
     Customer,
@@ -62,12 +63,17 @@ async def test_project_relationships(session: AsyncSession) -> None:
     project = await make_project(session)
     avery = User(code="AC", name="Avery Chen", roles=[Role(name="Client Partner")])
     session.add(avery)
+    upload = make_upload()
+    session.add(upload)
     await session.flush()
     project.owners.append(ProjectOwner(role="client_partner", user=avery))
     session.add_all(
         [
             ProjectMonthlyRevenue(project_id=project.id, month=MONTH, amount=Decimal("10.50")),
-            MonthlyActual(project_id=project.id, month=MONTH, amount=Decimal("9.99")),
+            MonthlyActual(
+                upload_id=upload.id, customer_id=project.customer_id, project_id=project.id,
+                month=MONTH, amount=Decimal("9.99"),
+            ),
             RevenueRevision(
                 project_id=project.id, month=MONTH, field="revenue", change_type="update",
                 old_value="1", new_value="2", actor_user_id=avery.id, actor_label="test",
@@ -90,19 +96,46 @@ async def test_project_relationships(session: AsyncSession) -> None:
 
 async def test_snapshot_lines_hold_a_copy_of_the_forecast(session: AsyncSession) -> None:
     project = await make_project(session)
-    snapshot = ForecastSnapshot(label="2026-10-01", snapshot_date=date(2026, 10, 1))
-    snapshot.lines.append(
-        ForecastSnapshotLine(project_id=project.id, month=MONTH, amount=Decimal("100.00"))
-    )
+    snapshot = make_snapshot()
     session.add(snapshot)
-    await session.commit()
-    assert snapshot.kind == "monthly"
-
+    await session.flush()
     session.add(
-        ForecastSnapshotLine(snapshot_id=snapshot.id, project_id=project.id, month=MONTH, amount=1)
-    )
-    with pytest.raises(IntegrityError):
+        ForecastSnapshotLine(
+            snapshot_id=snapshot.id, line_type="committed", month=MONTH,
+            amount=Decimal("100.00"), project_id=project.id, reference="R1", name="Build",
+        )
+    )  # fmt: skip
+    await session.commit()
+
+    session.add(make_snapshot(kind="scheduled"))  # one scheduled snapshot per month ...
+    await session.commit()
+    session.add(make_snapshot(kind="scheduled"))
+    with pytest.raises(IntegrityError):  # ... a second for the same month is refused
         await session.commit()
+    await session.rollback()
+    session.add(make_snapshot(kind="manual"))  # manual snapshots are unlimited
+    await session.commit()
+
+
+def make_snapshot(kind: str = "manual") -> ForecastSnapshot:
+    return ForecastSnapshot(
+        label="2026-10 test", period_month=date(2026, 10, 1), kind=kind,
+        taken_at=datetime(2026, 10, 1, 9, tzinfo=UTC), taken_by_label="test",
+        stage_probabilities=[], fiscal_year_start_month=4,
+        committed_total=Decimal("100.00"), weighted_total=Decimal("0.00"),
+        combined_total=Decimal("100.00"), unphased_deals=0, unphased_weighted=Decimal("0.00"),
+        outside_window_weighted=Decimal("0.00"), project_count=1, deal_count=0, line_count=1,
+        checksum="0" * 64,
+    )  # fmt: skip
+
+
+def make_upload() -> ActualsUpload:
+    return ActualsUpload(
+        filename="a.csv", sha256="0" * 64, status="completed", uploaded_by_label="test",
+        uploaded_at=datetime(2026, 11, 3, tzinfo=UTC), rows_total=1, rows_accepted=1,
+        rows_rejected=0, rows_unchanged=0, rows_replaced=0, total_amount=Decimal("9.99"),
+        months=["2026-10-01"], report={},
+    )  # fmt: skip
 
 
 async def test_deal_links_to_at_most_one_project(session: AsyncSession) -> None:
@@ -126,7 +159,9 @@ async def test_deal_links_to_at_most_one_project(session: AsyncSession) -> None:
     [
         lambda pid: ProjectMonthlyRevenue(project_id=pid, month=date(2026, 11, 2), amount=1),
         lambda pid: ProjectMonthlyRevenue(project_id=pid, month=MONTH, amount=Decimal("-1.00")),
-        lambda pid: MonthlyActual(project_id=pid, month=date(2026, 11, 15), amount=1),
+        lambda pid: MonthlyActual(
+            upload_id=1, customer_id=1, project_id=pid, month=date(2026, 11, 15), amount=1
+        ),
         lambda pid: ProjectOwner(project_id=pid, user_id=1, role="boss"),
         lambda pid: RevenueRevision(
             project_id=pid, field="x", change_type="rename", actor_label="t"

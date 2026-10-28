@@ -80,55 +80,6 @@ class RevenueRevision(Base):
     actor: Mapped[User | None] = relationship()
 
 
-class ForecastSnapshot(Base):
-    """An immutable point-in-time copy of the forecast (lines are never updated)."""
-
-    __tablename__ = "forecast_snapshots"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    label: Mapped[str] = mapped_column(String(100), unique=True)
-    snapshot_date: Mapped[date] = mapped_column(Date)
-    kind: Mapped[str] = mapped_column(String(16), server_default=text("'monthly'"))
-    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
-    created_at: Mapped[CreatedAt]
-
-    lines: Mapped[list[ForecastSnapshotLine]] = relationship(
-        back_populates="snapshot", cascade="all, delete-orphan"
-    )
-
-
-class ForecastSnapshotLine(Base):
-    __tablename__ = "forecast_snapshot_lines"
-    __table_args__ = (UniqueConstraint("snapshot_id", "project_id", "month"),)
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    snapshot_id: Mapped[int] = mapped_column(
-        ForeignKey("forecast_snapshots.id", ondelete="CASCADE")
-    )
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
-    month: Mapped[date] = mapped_column(Date)
-    amount: Mapped[Decimal] = mapped_column(Money)
-
-    snapshot: Mapped[ForecastSnapshot] = relationship(back_populates="lines")
-
-
-class MonthlyActual(Base):
-    """Finance-supplied actual revenue for a project-month."""
-
-    __tablename__ = "monthly_actuals"
-    __table_args__ = (
-        UniqueConstraint("project_id", "month"),
-        CheckConstraint(MONTH_START, name="month_is_first_day"),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
-    month: Mapped[date] = mapped_column(Date)
-    amount: Mapped[Decimal] = mapped_column(Money)
-    uploaded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
-    created_at: Mapped[CreatedAt]
-
-
 class QaFinding(Base):
     """An AI QA finding awaiting human accept/dismiss (the agent never edits data)."""
 

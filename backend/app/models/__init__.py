@@ -9,10 +9,16 @@ from app.models.pipeline import (
     PipelineEvent,
 )
 from app.models.projects import Category, Customer, Project, ProjectOwner
-from app.models.revenue import (
+from app.models.reporting import (
+    ActualsUpload,
+    ExportEvent,
     ForecastSnapshot,
     ForecastSnapshotLine,
+    ForecastSnapshotMonth,
+    JobRun,
     MonthlyActual,
+)
+from app.models.revenue import (
     OwnerAttestation,
     ProjectMonthlyRevenue,
     QaFinding,
@@ -21,13 +27,16 @@ from app.models.revenue import (
 from app.models.users import Role, User, user_roles
 
 __all__ = [
+    "ActualsUpload",
     "Base",
     "Category",
     "Customer",
     "DealProjectLink",
     "DraftConfirmation",
+    "ExportEvent",
     "ForecastSnapshot",
     "ForecastSnapshotLine",
+    "ForecastSnapshotMonth",
     "HubspotOpportunity",
     "HubspotStage",
     "HubspotSyncFinding",
@@ -35,6 +44,7 @@ __all__ = [
     "ImportIssue",
     "ImportReconciliation",
     "ImportRun",
+    "JobRun",
     "MonthlyActual",
     "OwnerAttestation",
     "PipelineEvent",
