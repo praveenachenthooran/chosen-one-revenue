@@ -1,6 +1,6 @@
 # The Chosen One
 
-The Chosen One is BIG's internal revenue forecasting application. This repository contains the Milestone 0 foundation (React frontend, FastAPI backend, PostgreSQL, tests, local containers) and Milestone 1: the revenue data model, the Excel migration, a read-only forecast API and a read-only AG Grid forecast. Milestone 2 adds Google Workspace sign-in, role and row-level permissions, monthly editing and audit history. Milestone 3 adds the read-only HubSpot pipeline: weighted deals, Closed Won drafts and combined totals. Milestone 4 adds immutable monthly snapshots, Excel/CSV exports, monthly actuals and the forecast accuracy report. AI features are not implemented yet.
+The Chosen One is BIG's internal revenue forecasting application. This repository contains the Milestone 0 foundation (React frontend, FastAPI backend, PostgreSQL, tests, local containers) and Milestone 1: the revenue data model, the Excel migration, a read-only forecast API and a read-only AG Grid forecast. Milestone 2 adds Google Workspace sign-in, role and row-level permissions, monthly editing and audit history. Milestone 3 adds the read-only HubSpot pipeline: weighted deals, Closed Won drafts and combined totals. Milestone 4 adds immutable monthly snapshots, Excel/CSV exports, monthly actuals and the forecast accuracy report. Milestone 5 adds the QA engine, the AI Revenue Detective and Forecast Health.
 
 ## Required tools
 
@@ -174,6 +174,20 @@ assumptions and the PRD ambiguities in [docs/milestone-4-notes.md](docs/mileston
    (with Project to narrow it down). **Check file** validates without saving; **Upload actuals** is all or nothing.
 
 No new environment variables are needed.
+
+## Milestone 5: QA and the AI Revenue Detective
+
+Deterministic QA checks (duplicates, Closed Won not committed, HubSpot amount vs schedule > 10%, rows not updated
+in 30 days, month-over-month anomalies, missing fields), an AI investigation of each finding, human accept/dismiss
+with a recorded reason, and a Forecast Health summary. Rules, accuracy and limits:
+[docs/milestone-5-notes.md](docs/milestone-5-notes.md). Railway: [docs/railway-deployment.md](docs/railway-deployment.md).
+
+1. `cd backend`, then `uv run alembic upgrade head` (adds the QA tables).
+2. Run the checks: `uv run python -m app.qa run` (nightly job: `uv run python -m app.qa nightly`;
+   `uv run python -m app.qa findings` lists them).
+3. Open the **Quality** tab: health, findings, and for each one the evidence, **Investigate**, and Accept / Dismiss.
+4. Claude is optional. Without `ANTHROPIC_API_KEY` **and** `AI_DATA_USE_APPROVED=true` (in `backend/.env`), the
+   deterministic investigator answers and the panel says why. Never commit a key.
 
 ## Environment variables
 
