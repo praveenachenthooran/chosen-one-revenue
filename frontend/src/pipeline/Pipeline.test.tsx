@@ -32,7 +32,7 @@ vi.mock('chart.js', () => {
       this.destroyed = true
     }
   }
-  return { Chart, CategoryScale: {}, LinearScale: {}, LineController: {}, LineElement: {}, PointElement: {}, Legend: {}, Tooltip: {} }
+  return { Chart, CategoryScale: {}, LinearScale: {}, LineController: {}, LineElement: {}, PointElement: {}, Legend: {}, Tooltip: {}, BarController: {}, BarElement: {}, Filler: {} }
 })
 
 function mockFetch(overrides: Routes = {}) {
@@ -48,7 +48,7 @@ function urls(method = 'GET') {
 
 async function openPipeline() {
   render(<App />)
-  await userEvent.click(await screen.findByRole('tab', { name: 'Pipeline' }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Pipeline' }))
   return screen.findByRole('table', { name: 'Deals' })
 }
 
@@ -58,17 +58,17 @@ describe('Pipeline view', () => {
   })
   afterEach(() => vi.restoreAllMocks())
 
-  it('has Forecast and Pipeline tabs and opens on the committed forecast', async () => {
+  it('opens on the role landing page and loads the pipeline only when opened', async () => {
     mockFetch()
     render(<App />)
 
-    const forecastTab = await screen.findByRole('tab', { name: 'Forecast' })
-    expect(forecastTab).toHaveAttribute('aria-selected', 'true')
-    expect(await screen.findByText('Cedarfall Energy')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'My projects' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'My projects' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: 'Monthly grid' })).toBeInTheDocument()
     expect(urls().some((u) => u.includes('/pipeline/'))).toBe(false) // not loaded until opened
 
-    await userEvent.click(screen.getByRole('tab', { name: 'Pipeline' }))
-    expect(screen.getByRole('tab', { name: 'Pipeline' })).toHaveAttribute('aria-selected', 'true')
+    await userEvent.click(screen.getByRole('button', { name: 'Pipeline' }))
+    expect(screen.getByRole('button', { name: 'Pipeline' })).toHaveAttribute('aria-current', 'page')
     expect(await screen.findByRole('table', { name: 'Deals' })).toBeInTheDocument()
   })
 
@@ -214,7 +214,7 @@ describe('Deal details', () => {
     expect(await screen.findByText('Could not load this deal.')).toBeInTheDocument()
   })
 
-  it('jumps to the draft project in the Forecast tab to edit its schedule', async () => {
+  it('jumps to the draft project page to edit its schedule', async () => {
     const draftProject = { ...projects[0], id: 55, name: 'Brightharbor - Claims AI Pilot', status: 'Draft' }
     mockFetch({
       '/api/v1/projects': () =>
@@ -225,8 +225,7 @@ describe('Deal details', () => {
     await userEvent.click(within(table).getByRole('button', { name: /Brightharbor/ }))
     await userEvent.click(await screen.findByRole('button', { name: /Open the project to edit its monthly schedule/ }))
 
-    expect(await screen.findByRole('tab', { name: 'Forecast' })).toHaveAttribute('aria-selected', 'true')
-    expect(await screen.findByRole('complementary', { name: /Details for Brightharbor/ })).toBeInTheDocument()
+    expect(await screen.findByText('Needs attention')).toBeInTheDocument()
     await waitFor(() => expect(urls().some((u) => u.endsWith('/v1/projects/55'))).toBe(true))
   })
 })
@@ -430,7 +429,7 @@ describe('Pipeline states and errors', () => {
       return mockApi(okRoutes)(input, init)
     })
     render(<App />)
-    await userEvent.click(await screen.findByRole('tab', { name: 'Pipeline' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Pipeline' }))
     expect(await screen.findByText('Loading the pipeline…')).toBeInTheDocument()
   })
 
@@ -438,13 +437,13 @@ describe('Pipeline states and errors', () => {
     let failing = true
     mockFetch({ '/api/v1/forecast/monthly': () => (failing ? json({ detail: 'boom' }, 500) : json(forecast)) })
     render(<App />)
-    await userEvent.click(await screen.findByRole('tab', { name: 'Pipeline' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Pipeline' }))
     expect(await screen.findByText('The pipeline could not be loaded.')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('tab', { name: 'Forecast' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Monthly grid' }))
     expect(await screen.findByText('Cedarfall Energy')).toBeInTheDocument() // unaffected
 
-    await userEvent.click(screen.getByRole('tab', { name: 'Pipeline' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Pipeline' }))
     failing = false
     await userEvent.click(await screen.findByRole('button', { name: 'Try again' }))
     expect(await screen.findByRole('table', { name: 'Deals' })).toBeInTheDocument()
@@ -456,14 +455,14 @@ describe('Pipeline states and errors', () => {
       '/api/v1/pipeline/confirmations': () => json([]),
     })
     render(<App />)
-    await userEvent.click(await screen.findByRole('tab', { name: 'Pipeline' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Pipeline' }))
     expect(await screen.findByText('Run a HubSpot sync to bring deals in.')).toBeInTheDocument()
   })
 
   it('returns to sign-in when the session ends', async () => {
     mockFetch({ '/api/v1/forecast/monthly': () => json({ detail: { code: 'not_authenticated', message: 'Sign in.' } }, 401) })
     render(<App />)
-    await userEvent.click(await screen.findByRole('tab', { name: 'Pipeline' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Pipeline' }))
     expect(await screen.findByRole('link', { name: 'Sign in with Google' })).toBeInTheDocument()
   })
 })
@@ -519,12 +518,13 @@ describe('Stage probabilities', () => {
 describe('Existing views are unchanged', () => {
   afterEach(() => vi.restoreAllMocks())
 
-  it('keeps the signed-in shell and a working grid', async () => {
+  it('keeps the signed-in shell, with the monthly grid still available', async () => {
     mockFetch({ '/api/auth/me': () => json(signedIn) })
     render(<App />)
-    expect(await screen.findByText('Avery Chen')).toBeInTheDocument()
-    expect(await screen.findByText('Cedarfall Energy')).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Forecast' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByRole('row', { name: 'Open Cedarfall Energy' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Monthly grid' }))
+    expect(await screen.findByRole('button', { name: 'Data Platform Build' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Monthly grid' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
   })
 })

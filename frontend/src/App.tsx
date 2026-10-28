@@ -1,48 +1,32 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { fetchAuth, signOut, type AuthUser } from './api'
+import SignIn from './components/SignIn'
 import ForecastWorkspace from './ForecastWorkspace'
+import RevenueOverview from './leadership/RevenueOverview'
 import PipelineView from './pipeline/PipelineView'
+import PortfolioView from './portfolio/PortfolioView'
+import MyProjects from './projects/MyProjects'
+import ProjectPage from './projects/ProjectPage'
 import QualityView from './quality/QualityView'
 import AccuracyView from './reporting/AccuracyView'
 import ActualsView from './reporting/ActualsView'
 import SnapshotsView from './reporting/SnapshotsView'
-import SignIn from './components/SignIn'
+import { ACTUALS_LOADERS, ACTUALS_VIEWERS, EXPERIENCE_LABEL, experiencesFor, hasRole, type Experience } from './roles'
+import { ErrorState, Loading, PageHeader } from './ui/Panel'
+import { icons } from './ui/icons'
+import { Logo } from './ui/Logo'
+import { WorkspaceProvider } from './workspace'
 
-type View = 'forecast' | 'pipeline' | 'quality' | 'snapshots' | 'actuals' | 'accuracy'
+type SecondaryView = 'checks' | 'pipeline' | 'snapshots' | 'actuals' | 'accuracy' | 'grid'
+type View = Experience | SecondaryView
 
-// Who may see actuals and the accuracy report, and who may load actuals (the server enforces both).
-const ACTUALS_VIEWERS = ['Finance', 'CRO / Sales Leadership', 'Administrator']
-const ACTUALS_LOADERS = ['Finance', 'Administrator']
-
-type Health = { status: string; service: string }
-type HealthState = { kind: 'loading' } | { kind: 'ready'; health: Health } | { kind: 'error' }
 type AuthState =
   | { kind: 'loading' }
   | { kind: 'unreachable' }
   | { kind: 'signedOut'; error: string | null }
   | { kind: 'signedIn'; user: AuthUser }
 
-function isAbort(error: unknown) {
-  return error instanceof DOMException && error.name === 'AbortError'
-}
-
-function useHealth(): HealthState {
-  const [state, setState] = useState<HealthState>({ kind: 'loading' })
-  useEffect(() => {
-    const controller = new AbortController()
-    fetch('/api/health', { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error(`Health check failed: ${response.status}`)
-        return response.json() as Promise<Health>
-      })
-      .then((health) => setState({ kind: 'ready', health }))
-      .catch((error: unknown) => {
-        if (!isAbort(error)) setState({ kind: 'error' })
-      })
-    return () => controller.abort()
-  }, [])
-  return state
-}
+const isAbort = (error: unknown) => error instanceof DOMException && error.name === 'AbortError'
 
 /** The sign-in error Google redirected back with (?auth_error=...), removed from the URL. */
 function takeAuthError(): string | null {
@@ -55,49 +39,171 @@ function takeAuthError(): string | null {
   return error
 }
 
-function HealthIndicator({ state }: { state: HealthState }) {
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+
+const BACK_LABEL: Record<View, string> = {
+  partner: 'Back to my projects',
+  portfolio: 'Back to the portfolio',
+  leadership: 'Back to the revenue overview',
+  checks: 'Back to checks',
+  pipeline: 'Back to the pipeline',
+  snapshots: 'Back to snapshots',
+  actuals: 'Back to actuals',
+  accuracy: 'Back to accuracy',
+  grid: 'Back to the monthly grid',
+}
+
+const EXPERIENCE_ICON = { leadership: icons.bars, portfolio: icons.chart, partner: icons.list } as const
+
+function Signed({ user, onSignOut, onSessionEnded }: { user: AuthUser; onSignOut: () => void; onSessionEnded: () => void }) {
+  const experiences = useMemo(() => experiencesFor(user), [user])
+  const [view, setView] = useState<View>(experiences[0])
+  const [projectId, setProjectId] = useState<number | null>(null)
+  const [openDeal, setOpenDeal] = useState<{ id: number; title: string } | null>(null)
+
+  const go = useCallback((next: View) => {
+    setProjectId(null)
+    setOpenDeal(null)
+    setView(next)
+    window.scrollTo(0, 0)
+  }, [])
+  const openProject = useCallback((id: number) => {
+    setProjectId(id)
+    window.scrollTo(0, 0)
+  }, [])
+  const openDealView = useCallback((deal: { id: number; title: string }) => {
+    setProjectId(null)
+    setOpenDeal(deal)
+    setView('pipeline')
+    window.scrollTo(0, 0)
+  }, [])
+
+  const canSeeActuals = hasRole(user, ...ACTUALS_VIEWERS)
+  const secondary: [SecondaryView, string, ReactNode][] = [
+    ['pipeline', 'Pipeline', icons.funnel],
+    ['checks', 'Checks', icons.shield],
+    ['snapshots', 'Snapshots', icons.clock],
+    ...(canSeeActuals ? ([['actuals', 'Actuals', icons.upload], ['accuracy', 'Accuracy', icons.target]] as [SecondaryView, string, ReactNode][]) : []),
+    ['grid', 'Monthly grid', icons.list],
+  ]
+
+  const nav = (id: View, label: string, icon: ReactNode) => (
+    <button key={id} type="button" className={`navi${view === id ? ' on' : ''}`} aria-current={view === id ? 'page' : undefined} onClick={() => go(id)}>
+      {icon}
+      <span>{label}</span>
+    </button>
+  )
+
+  let body: ReactNode
+  if (projectId !== null) {
+    body = (
+      <ProjectPage
+        key={projectId}
+        projectId={projectId}
+        backLabel={BACK_LABEL[view]}
+        onBack={() => setProjectId(null)}
+        chartOpen={view !== 'partner'}
+        onSessionEnded={onSessionEnded}
+        onOpenDeal={openDealView}
+      />
+    )
+  } else if (view === 'partner') body = <MyProjects user={user} onOpen={openProject} />
+  else if (view === 'portfolio') body = <PortfolioView user={user} title={EXPERIENCE_LABEL.portfolio(user)} onOpen={openProject} />
+  else if (view === 'leadership')
+    body = <RevenueOverview onSessionEnded={onSessionEnded} onOpenProject={openProject} onOpenDeal={openDealView} onGo={go} />
+  else if (view === 'checks')
+    body = (
+      <>
+        <PageHeader title="Checks" sub="Findings from the deterministic checks, with the AI Revenue Detective to explain them." />
+        <QualityView onSessionEnded={onSessionEnded} onOpenProject={openProject} onOpenDeal={openDealView} />
+      </>
+    )
+  else if (view === 'pipeline')
+    body = (
+      <>
+        <PageHeader title="Pipeline" sub="HubSpot deals, weighted by stage probability, and the forecast they add." />
+        <PipelineView key={openDeal?.id ?? 'pipeline'} initialDeal={openDeal} user={user} onSessionEnded={onSessionEnded} onOpenProject={openProject} />
+      </>
+    )
+  else if (view === 'snapshots')
+    body = (
+      <>
+        <PageHeader title="Snapshots" sub="Saved copies of the forecast that never change, for comparison and export." />
+        <SnapshotsView onSessionEnded={onSessionEnded} />
+      </>
+    )
+  else if (view === 'actuals')
+    body = (
+      <>
+        <PageHeader title="Actuals" sub="Actual revenue by month, as uploaded by Finance." />
+        <ActualsView canUpload={hasRole(user, ...ACTUALS_LOADERS)} onSessionEnded={onSessionEnded} />
+      </>
+    )
+  else if (view === 'accuracy')
+    body = (
+      <>
+        <PageHeader title="Accuracy" sub="How closely earlier forecasts matched actual revenue." />
+        <AccuracyView onSessionEnded={onSessionEnded} />
+      </>
+    )
+  else
+    body = (
+      <>
+        <PageHeader title="Monthly grid" sub="Every project by month. Double-click a month to edit it where you are an owner." />
+        <ForecastWorkspace onSessionEnded={onSessionEnded} />
+      </>
+    )
+
   return (
-    <div className="d-flex align-items-center gap-2 small" role="status" aria-live="polite">
-      {state.kind === 'loading' && (
-        <>
-          <span className="spinner-border spinner-border-sm text-primary" aria-hidden="true" />
-          <span>Connecting to the API…</span>
-        </>
-      )}
-      {state.kind === 'ready' && (
-        <>
-          <span className="status-dot status-dot-ready" aria-hidden="true" />
-          <span>API connected ({state.health.status})</span>
-        </>
-      )}
-      {state.kind === 'error' && (
-        <>
-          <span className="status-dot status-dot-error" aria-hidden="true" />
-          <span className="text-danger">Unable to reach the API. Is FastAPI running?</span>
-        </>
-      )}
+    <div className="shell">
+      <aside className="side">
+        <div className="wordmark">
+          <Logo />
+          <span>Biggie Revenue</span>
+        </div>
+        <nav className="nav" aria-label="Main">
+          {experiences.map((e) => nav(e, EXPERIENCE_LABEL[e](user), EXPERIENCE_ICON[e]))}
+          <div className="nav-group">Reports and checks</div>
+          {secondary.map(([id, label, icon]) => nav(id, label, icon))}
+        </nav>
+        <div className="side-foot">
+          <div className="who">
+            <div className="av" aria-hidden="true">
+              {initials(user.name)}
+            </div>
+            <div>
+              <div className="who-n">{user.name}</div>
+              <div className="who-r">{user.roles.join(', ') || 'No role assigned'}</div>
+            </div>
+          </div>
+          <button type="button" className="linkbtn" onClick={onSignOut}>
+            Sign out
+          </button>
+        </div>
+      </aside>
+      <main className="main" id="main">
+        {body}
+      </main>
     </div>
   )
 }
 
 export default function App() {
-  const health = useHealth()
   const [auth, setAuth] = useState<AuthState>({ kind: 'loading' })
   const [attempt, setAttempt] = useState(0)
-  const [view, setView] = useState<View>('forecast')
-  const [openProjectId, setOpenProjectId] = useState<number | null>(null)
-  const [openDeal, setOpenDeal] = useState<{ id: number; title: string } | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
     const authError = takeAuthError()
     fetchAuth(controller.signal)
       .then((status) =>
-        setAuth(
-          status.authenticated && status.user
-            ? { kind: 'signedIn', user: status.user }
-            : { kind: 'signedOut', error: authError },
-        ),
+        setAuth(status.authenticated && status.user ? { kind: 'signedIn', user: status.user } : { kind: 'signedOut', error: authError }),
       )
       .catch((error: unknown) => {
         if (!isAbort(error)) setAuth({ kind: 'unreachable' })
@@ -115,134 +221,29 @@ export default function App() {
     }
   }
 
-  if (auth.kind === 'signedOut') {
+  if (auth.kind === 'signedOut') return <SignIn error={auth.error} />
+  if (auth.kind === 'loading')
     return (
-      <>
-        <SignIn error={auth.error} />
-        <div className="signin-health">
-          <HealthIndicator state={health} />
-        </div>
-      </>
+      <div className="main">
+        <Loading text="Checking your session…" />
+      </div>
     )
-  }
+  if (auth.kind === 'unreachable')
+    return (
+      <div className="main">
+        <ErrorState
+          text="We could not check whether you are signed in. The service may be down. Try again in a moment."
+          onRetry={() => {
+            setAuth({ kind: 'loading' })
+            setAttempt((n) => n + 1)
+          }}
+        />
+      </div>
+    )
 
   return (
-    <div className="app-page">
-      <header className="app-header">
-        <div>
-          <p className="eyebrow mb-1">BIG Revenue Forecasting</p>
-          <h1 className="h3 fw-semibold mb-0">The Chosen One</h1>
-        </div>
-        <div className="d-flex align-items-center gap-3 flex-wrap justify-content-end">
-          <HealthIndicator state={health} />
-          {auth.kind === 'signedIn' && (
-            <div className="d-flex align-items-center gap-2">
-              <span className="small text-end">
-                <strong>{auth.user.name}</strong>
-                <br />
-                <span className="text-secondary">{auth.user.roles.join(' · ') || 'No roles'}</span>
-              </span>
-              <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => void handleSignOut()}>
-                Sign out
-              </button>
-            </div>
-          )}
-        </div>
-      </header>
-
-      {auth.kind === 'signedIn' && (
-        <nav className="app-tabs" role="tablist" aria-label="Views">
-          {(
-            [
-              ['forecast', 'Forecast', true],
-              ['pipeline', 'Pipeline', true],
-              ['quality', 'Quality', true],
-              ['snapshots', 'Snapshots', true],
-              ['actuals', 'Actuals', auth.user.roles.some((r) => ACTUALS_VIEWERS.includes(r))],
-              ['accuracy', 'Accuracy', auth.user.roles.some((r) => ACTUALS_VIEWERS.includes(r))],
-            ] as const
-          )
-            .filter(([, , visible]) => visible)
-            .map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                id={`tab-${id}`}
-                aria-selected={view === id}
-                className={`app-tab${view === id ? ' active' : ''}`}
-                onClick={() => {
-                  setOpenProjectId(null)
-                  setOpenDeal(null)
-                  setView(id)
-                }}
-              >
-                {label}
-              </button>
-            ))}
-        </nav>
-      )}
-
-      <main className="app-main" role="tabpanel" aria-labelledby={`tab-${view}`}>
-        {auth.kind === 'loading' && (
-          <div className="state-box" role="status" aria-live="polite">
-            <span className="spinner-border spinner-border-sm text-primary" aria-hidden="true" />
-            <span>Checking your session…</span>
-          </div>
-        )}
-        {auth.kind === 'unreachable' && (
-          <div className="state-box" role="alert">
-            <p className="mb-2">We could not check whether you are signed in.</p>
-            <p className="text-secondary small mb-3">The API may be down. Try again in a moment.</p>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => {
-                setAuth({ kind: 'loading' })
-                setAttempt((n) => n + 1)
-              }}
-            >
-              Try again
-            </button>
-          </div>
-        )}
-        {auth.kind === 'signedIn' && view === 'forecast' && (
-          <ForecastWorkspace key={openProjectId ?? 'forecast'} onSessionEnded={onSessionEnded} initialProjectId={openProjectId} />
-        )}
-        {auth.kind === 'signedIn' && view === 'quality' && (
-          <QualityView
-            onSessionEnded={onSessionEnded}
-            onOpenProject={(projectId) => {
-              setOpenProjectId(projectId)
-              setView('forecast')
-            }}
-            onOpenDeal={(deal) => {
-              setOpenDeal(deal)
-              setView('pipeline')
-            }}
-          />
-        )}
-        {auth.kind === 'signedIn' && view === 'snapshots' && <SnapshotsView onSessionEnded={onSessionEnded} />}
-        {auth.kind === 'signedIn' && view === 'actuals' && (
-          <ActualsView
-            canUpload={auth.user.roles.some((r) => ACTUALS_LOADERS.includes(r))}
-            onSessionEnded={onSessionEnded}
-          />
-        )}
-        {auth.kind === 'signedIn' && view === 'accuracy' && <AccuracyView onSessionEnded={onSessionEnded} />}
-        {auth.kind === 'signedIn' && view === 'pipeline' && (
-          <PipelineView
-            key={openDeal?.id ?? 'pipeline'}
-            initialDeal={openDeal}
-            user={auth.user}
-            onSessionEnded={onSessionEnded}
-            onOpenProject={(projectId) => {
-              setOpenProjectId(projectId)
-              setView('forecast')
-            }}
-          />
-        )}
-      </main>
-    </div>
+    <WorkspaceProvider onSessionEnded={onSessionEnded}>
+      <Signed user={auth.user} onSignOut={() => void handleSignOut()} onSessionEnded={onSessionEnded} />
+    </WorkspaceProvider>
   )
 }

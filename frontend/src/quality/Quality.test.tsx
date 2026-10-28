@@ -19,7 +19,7 @@ vi.mock('chart.js', () => {
     static register() {}
     destroy() {}
   }
-  return { Chart, CategoryScale: {}, LinearScale: {}, LineController: {}, LineElement: {}, PointElement: {}, Legend: {}, Tooltip: {} }
+  return { Chart, CategoryScale: {}, LinearScale: {}, LineController: {}, LineElement: {}, PointElement: {}, Legend: {}, Tooltip: {}, BarController: {}, BarElement: {}, Filler: {} }
 })
 
 function mockFetch(overrides: Routes = {}) {
@@ -41,13 +41,13 @@ function calls(method = 'GET'): Call[] {
 
 async function openQuality() {
   render(<App />)
-  await userEvent.click(await screen.findByRole('tab', { name: 'Quality' }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Checks' }))
   return screen.findByRole('table', { name: 'Findings' })
 }
 
 async function openFinding(title: RegExp) {
   await userEvent.click(await screen.findByRole('button', { name: title }))
-  return screen.findByRole('complementary', { name: /^Finding: / })
+  return screen.findByRole('dialog')
 }
 
 const LEADER: Routes = { '/api/auth/me': () => json(croMe) }
@@ -59,9 +59,11 @@ describe('Quality tab and Forecast Health', () => {
   it('is available to every signed-in role and does not load until opened', async () => {
     mockFetch()
     render(<App />)
-    expect(await screen.findByRole('tab', { name: 'Quality' })).toBeInTheDocument()
-    await screen.findByText('Cedarfall Energy')
-    expect(calls().some((c) => c.url.includes('/qa/'))).toBe(false)
+    expect(await screen.findByRole('button', { name: 'Checks' })).toBeInTheDocument()
+    await screen.findByRole('row', { name: 'Open Cedarfall Energy' })
+    // The findings workspace itself opens on demand; only the status summary loads up front.
+    expect(screen.queryByRole('table', { name: 'Findings' })).not.toBeInTheDocument()
+    expect(calls().some((c) => c.url.includes('/qa/investigations') || c.url.includes('/qa/runs'))).toBe(false)
   })
 
   it('shows health as plain counts with the reasons for its status', async () => {
@@ -168,13 +170,13 @@ describe('Findings list', () => {
   it('has an empty state and an error state that leaves the forecast alone', async () => {
     mockFetch({ '/api/v1/qa/findings': () => json({ items: [], total_items: 0 }) })
     render(<App />)
-    await userEvent.click(await screen.findByRole('tab', { name: 'Quality' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Checks' }))
     expect(await screen.findByText('No findings match.')).toBeInTheDocument()
 
     vi.restoreAllMocks()
     mockFetch({ '/api/v1/qa/findings': () => json({ detail: 'boom' }, 500) })
-    await userEvent.click(screen.getByRole('tab', { name: 'Forecast' }))
-    await userEvent.click(screen.getByRole('tab', { name: 'Quality' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Monthly grid' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Checks' }))
     expect(await screen.findByText('Findings could not be loaded.')).toBeInTheDocument()
     expect(screen.getByText('The forecast itself is unaffected.')).toBeInTheDocument()
   })
@@ -188,32 +190,32 @@ describe('Finding panel', () => {
 
     expect(panel.getByText(/with no reason recorded/)).toBeInTheDocument()
     expect(panel.getByText('$21,000')).toBeInTheDocument()
-    expect(panel.getByText('Avery Chen')).toBeInTheDocument()
+    expect(panel.getByText(/with Avery Chen/)).toBeInTheDocument()
     expect(panel.getByText(/Ask the owner what changed/)).toBeInTheDocument()
-    await userEvent.click(panel.getByText('Evidence from the checks'))
-    expect(panel.getByText('billing type')).toBeInTheDocument()
-    const trail = within(panel.getByRole('region', { name: 'Audit trail' }))
+    await userEvent.click(panel.getByText('View evidence'))
+    expect(panel.getByText('Billing type')).toBeInTheDocument()
+    const trail = within(panel.getByText('History').closest('details') as HTMLElement)
     expect(trail.getByText(/Raised by the mom_anomaly check/)).toBeInTheDocument()
     expect(trail.getByText(/qa-engine/)).toBeInTheDocument()
   })
 
-  it('opens the underlying project (with its audit history) in the Forecast tab', async () => {
+  it('opens the underlying project, with its history, on the project page', async () => {
     mockFetch()
     await openQuality()
     const panel = within(await openFinding(/Unusual revenue rise/))
-    await userEvent.click(panel.getByRole('button', { name: 'Open R1008 and its audit history' }))
+    await userEvent.click(panel.getByRole('button', { name: 'Open Data Platform Co' }))
 
-    expect(screen.getByRole('tab', { name: 'Forecast' })).toHaveAttribute('aria-selected', 'true')
-    expect(await screen.findByRole('complementary', { name: /Details for Data Platform Build/ })).toBeInTheDocument()
+    expect(await screen.findByText('Needs attention')).toBeInTheDocument()
+    expect(await screen.findByText('Change history')).toBeInTheDocument()
   })
 
   it('opens the underlying HubSpot deal in the Pipeline tab', async () => {
     mockFetch()
     await openQuality()
     await openFinding(/Closed Won not committed/)
-    await userEvent.click(screen.getByRole('button', { name: 'Open HubSpot deal 65394918517' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Open HubSpot deal' }))
 
-    expect(screen.getByRole('tab', { name: 'Pipeline' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('button', { name: 'Pipeline' })).toHaveAttribute('aria-current', 'page')
     expect(await screen.findByRole('complementary', { name: /Pembrook - Appian Renewal/ })).toBeInTheDocument()
   })
 
@@ -245,8 +247,8 @@ describe('Finding panel', () => {
 
     expect(await panel.findByText(/Investigating… looking through/)).toBeInTheDocument()
     expect(panel.queryByRole('button', { name: 'Investigate' })).not.toBeInTheDocument()
-    expect(await panel.findByText('Completed', {}, { timeout: 6000 })).toBeInTheDocument()
-    expect(panel.getByText('Awaiting review', { selector: '.finding-state' })).toBeInTheDocument()
+    expect(await panel.findByText(/unexplained 70\.0% movement/, {}, { timeout: 6000 })).toBeInTheDocument()
+    expect(panel.getByText('Awaiting review')).toBeInTheDocument()
     expect(calls('POST')[0].headers['X-CSRF-Token']).toBe('csrf-token-123')
   }, 15000)
 
@@ -255,21 +257,25 @@ describe('Finding panel', () => {
     await openQuality()
     const section = within(within(await openFinding(/Unusual revenue rise/)).getByRole('region', { name: 'Investigation' }))
 
-    expect(section.getByText('Deterministic checks')).toBeInTheDocument()
-    expect(section.getByText(/confidence medium/)).toBeInTheDocument()
+    expect(section.getByText('Rule-based checks')).toBeInTheDocument()
+    expect(section.getByText('medium confidence')).toBeInTheDocument()
     expect(section.getByText('Confirmed')).toBeInTheDocument()
     expect(section.getByText('Hypothesis')).toBeInTheDocument()
     expect(section.getByText('Insufficient evidence')).toBeInTheDocument()
-    expect(section.getByText('deal:9')).toBeInTheDocument()
-    expect(section.getAllByText('project:1')).toHaveLength(2)
+    expect(section.getByText('deal:9, project:1')).toBeInTheDocument() // the sources, kept behind "Sources"
+    expect(section.getByText('project:1')).toBeInTheDocument()
     expect(section.getByText(/Closed Lost deal exists for the same customer; nothing links it/)).toBeInTheDocument()
-    expect(section.getByText(/\$21,000, the size of the largest month-over-month movement/)).toBeInTheDocument()
-    expect(section.getByText(/calculated, not estimated by the model/)).toBeInTheDocument()
+    expect(section.getByText('$21,000')).toBeInTheDocument()
+    expect(section.getByText(/the size of the largest month-over-month movement/)).toBeInTheDocument()
+    expect(section.getByText(/not estimated by the model/)).toBeInTheDocument()
     expect(section.getByText(/Ask the row owner what changed/)).toBeInTheDocument()
     expect(section.getAllByText(/No Anthropic API key is configured\./)).toHaveLength(2) // why, and the fallback note
-    expect(section.getByText(/Limits: Fewer than two snapshots exist\./)).toBeInTheDocument()
-    await userEvent.click(section.getByText(/Investigation steps \(2\)/))
-    expect(section.getByText(/get_project_history \{"project_id":1\} → ok/)).toBeInTheDocument()
+    expect(section.getByText('What this can’t tell us')).toBeInTheDocument()
+    expect(section.getByText('Fewer than two snapshots exist.')).toBeInTheDocument()
+    // How it was checked is in plain words on request, never as tool calls or JSON.
+    await userEvent.click(within(within(await screen.findByRole('dialog')).getByText('View evidence').closest('details') as HTMLElement).getByText('View evidence'))
+    expect(screen.getByText(/Read the project’s change history: ok/)).toBeInTheDocument()
+    expect(screen.queryByText(/"project_id"/)).not.toBeInTheDocument()
   })
 
   it('labels an investigation done by Claude', async () => {
@@ -277,7 +283,7 @@ describe('Finding panel', () => {
     mockFetch({ '/api/v1/qa/findings/11': () => json({ ...findingDetail, investigations: [ai] }) })
     await openQuality()
     const section = within(within(await openFinding(/Unusual revenue rise/)).getByRole('region', { name: 'Investigation' }))
-    expect(section.getByText('Claude (claude-sonnet-5-5)')).toBeInTheDocument()
+    expect(section.getByText('Claude')).toBeInTheDocument()
   })
 
   it('shows a failed investigation with the reason and a way to retry', async () => {
@@ -319,7 +325,7 @@ describe('Human review', () => {
     expect(post.body).toEqual({ reason: 'Real: will fix' })
     expect(post.headers['X-CSRF-Token']).toBe('csrf-token-123')
     expect(calls('PUT')).toHaveLength(0) // nothing edits revenue
-    expect(panel.getByText(/Accepting records that the finding is real; it does not change revenue/)).toBeInTheDocument()
+    expect(panel.getByText(/Accepting records that the finding is real/)).toBeInTheDocument()
   })
 
   it('dismisses with a reason', async () => {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, fetchFindings, fetchHealth, runChecks, type Finding, type FindingFilters, type Health } from '../api'
 import { formatMoney } from '../format'
-import FindingPanel from './FindingPanel'
+import DetectiveDrawer from './DetectiveDrawer'
 import HealthSummary from './HealthSummary'
 import { RULE_LABELS, STATUS_LABELS } from './labels'
 
@@ -232,7 +232,7 @@ export default function QualityView({ onSessionEnded, onOpenProject, onOpenDeal 
       </div>
 
       {selectedId !== null && (
-        <FindingPanel
+        <DetectiveDrawer
           key={selectedId}
           findingId={selectedId}
           onClose={() => setSelectedId(null)}

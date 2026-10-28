@@ -20,23 +20,21 @@ describe('App shell and sign-in', () => {
     window.history.replaceState(null, '', '/')
   })
 
-  it('keeps the Milestone 0 shell and API health indicator', async () => {
-    mockFetch()
+  it('shows the Biggie Revenue sign-in and no developer status', async () => {
+    mockFetch({ '/api/auth/me': () => json(signedOut) })
     render(<App />)
 
-    expect(await screen.findByRole('heading', { name: 'The Chosen One' })).toBeInTheDocument()
-    expect(await screen.findByText('API connected (ok)')).toBeInTheDocument()
-    expect(fetch).toHaveBeenCalledWith('/api/health', expect.any(Object))
+    expect(await screen.findByRole('heading', { name: 'Know where every project’s revenue is heading.' })).toBeInTheDocument()
+    expect(screen.getByText('Biggie Revenue')).toBeInTheDocument()
+    expect(screen.queryByText(/The Chosen One/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/API connected/)).not.toBeInTheDocument()
   })
 
   it('shows the signed-out screen and never requests project data', async () => {
     mockFetch({ '/api/auth/me': () => json(signedOut) })
     render(<App />)
 
-    expect(await screen.findByRole('link', { name: 'Sign in with Google' })).toHaveAttribute(
-      'href',
-      '/api/auth/login',
-    )
+    expect(await screen.findByRole('link', { name: 'Sign in with Google' })).toHaveAttribute('href', '/api/auth/login')
     expect(screen.queryByText('Cedarfall Energy')).not.toBeInTheDocument()
     expect(calledPaths().some((p) => p.includes('/api/v1/'))).toBe(false)
   })
@@ -48,7 +46,7 @@ describe('App shell and sign-in', () => {
   })
 
   it.each([
-    ['not_provisioned', /has not been given access/],
+    ['not_provisioned', /has not been given access to Biggie Revenue/],
     ['email_unverified', /not verified/],
     ['not_configured', /has not been configured/],
     ['failed', /could not be completed/],
@@ -62,13 +60,15 @@ describe('App shell and sign-in', () => {
     expect(window.location.search).toBe('')
   })
 
-  it('shows who is signed in with their roles, and loads the forecast', async () => {
+  it('shows who is signed in with their role, and lands a Client Partner on My projects', async () => {
     mockFetch()
     render(<App />)
 
-    expect(await screen.findByText('Avery Chen')).toBeInTheDocument()
-    expect(screen.getByText('Client Partner')).toBeInTheDocument()
-    expect(await screen.findByText('Cedarfall Energy')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'My projects' })).toBeInTheDocument()
+    const sidebar = screen.getByRole('complementary')
+    expect(within(sidebar).getByText('Avery Chen')).toBeInTheDocument()
+    expect(within(sidebar).getByText('Client Partner')).toBeInTheDocument()
+    expect(await screen.findByRole('row', { name: 'Open Cedarfall Energy' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Sign in with Google' })).not.toBeInTheDocument()
   })
 
@@ -101,7 +101,7 @@ describe('App shell and sign-in', () => {
     let down = true
     mockFetch({ '/api/auth/me': () => (down ? json({ detail: 'boom' }, 500) : json(signedOut)) })
     render(<App />)
-    expect(await screen.findByText('We could not check whether you are signed in.')).toBeInTheDocument()
+    expect(await screen.findByText(/We could not check whether you are signed in/)).toBeInTheDocument()
 
     down = false
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
@@ -109,75 +109,81 @@ describe('App shell and sign-in', () => {
   })
 })
 
-describe('App forecast states', () => {
+describe('My projects (Client Partner)', () => {
   afterEach(() => vi.restoreAllMocks())
 
-  it('shows a loading state, then the projects in the grid', async () => {
+  it('lists only the projects the partner owns, flagged and ordered, with no graph', async () => {
     mockFetch()
     render(<App />)
 
-    expect(await screen.findByText('Loading the forecast…')).toBeInTheDocument()
-    expect(await screen.findByText('Cedarfall Energy')).toBeInTheDocument()
-    expect(screen.getByText('Kestrel Life')).toBeInTheDocument()
-    expect(screen.getByText(/2 projects · you can edit 1/)).toBeInTheDocument()
+    const table = await screen.findByRole('table')
+    const rows = within(table).getAllByRole('row').slice(1)
+    expect(rows).toHaveLength(1) // Kestrel Life belongs to someone else
+    const row = rows[0]
+    expect(within(row).getByText('Cedarfall Energy')).toBeInTheDocument()
+    expect(within(row).getByText('Off Track')).toBeInTheDocument()
+    expect(within(row).getByText('$21,000')).toBeInTheDocument()
+    expect(within(row).getByText('Verify the change in monthly revenue')).toBeInTheDocument()
+    expect(within(row).getByText('Medium')).toBeInTheDocument()
+    expect(screen.queryByRole('img')).not.toBeInTheDocument() // the graph lives in the project, not here
+    expect(screen.queryByText('Kestrel Life')).not.toBeInTheDocument()
   })
 
-  it('says read-only when the user can edit nothing', async () => {
+  it('does not show technology, industry, region or mismatch columns', async () => {
+    mockFetch()
+    render(<App />)
+    const table = await screen.findByRole('table')
+    const headers = within(table).getAllByRole('columnheader').map((h) => h.textContent)
+    expect(headers).toEqual(['Project', 'Status', 'Owner', 'Revenue at stake', 'Required action', 'Priority'])
+  })
+
+  it('filters by status and says so when nothing matches', async () => {
+    mockFetch()
+    render(<App />)
+    await screen.findByRole('row', { name: 'Open Cedarfall Energy' })
+
+    await userEvent.selectOptions(screen.getByLabelText('Status'), 'on_track')
+
+    expect(await screen.findByText('No projects match these filters')).toBeInTheDocument()
+    await userEvent.click(screen.getAllByRole('button', { name: 'Clear filters' })[0])
+    expect(await screen.findByRole('row', { name: 'Open Cedarfall Energy' })).toBeInTheDocument()
+  })
+
+  it('searches by customer or project', async () => {
+    mockFetch()
+    render(<App />)
+    await screen.findByRole('row', { name: 'Open Cedarfall Energy' })
+    await userEvent.type(screen.getByLabelText('Search'), 'zzz')
+    expect(await screen.findByText('No projects match these filters')).toBeInTheDocument()
+  })
+
+  it('explains an empty list instead of showing a blank table', async () => {
     mockFetch({
-      '/api/v1/projects': () =>
-        json({
-          items: [{ ...projects[0], can_edit: false }],
-          page: 1,
-          page_size: 500,
-          total_items: 1,
-          total_pages: 1,
-        }),
+      '/api/v1/projects': () => json({ items: [{ ...projects[0], can_edit: false }], page: 1, page_size: 500, total_items: 1, total_pages: 1 }),
     })
     render(<App />)
-    expect(await screen.findByText('1 projects · read-only')).toBeInTheDocument()
+    expect(await screen.findByText('No projects are assigned to you yet')).toBeInTheDocument()
   })
 
-  it('shows an empty state with the import command when nothing is imported', async () => {
-    mockFetch({
-      '/api/v1/projects': () => json(emptyPage),
-      '/api/v1/imports/latest': () => json({ detail: 'Import run not found' }, 404),
-    })
-    render(<App />)
-
-    expect(await screen.findByText('No projects have been imported yet.')).toBeInTheDocument()
-    expect(screen.getByText('uv run python -m app.migration')).toBeInTheDocument()
-  })
-
-  it('shows an error state with retry when the forecast cannot be loaded', async () => {
+  it('shows an error state with retry when the projects cannot be loaded', async () => {
     let failing = true
-    mockFetch({
-      '/api/v1/projects': () => (failing ? json({ detail: 'boom' }, 500) : json(emptyPage)),
-    })
+    mockFetch({ '/api/v1/projects': () => (failing ? json({ detail: 'boom' }, 500) : json(emptyPage)) })
     render(<App />)
-    expect(await screen.findByText('The forecast could not be loaded.')).toBeInTheDocument()
+    expect(await screen.findByText('Your projects could not be loaded.')).toBeInTheDocument()
 
     failing = false
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
-    expect(await screen.findByText('No projects have been imported yet.')).toBeInTheDocument()
+    expect(await screen.findByText('No projects are assigned to you yet')).toBeInTheDocument()
   })
 
-  it('filters the grid with the search box', async () => {
+  it('opens the project from its row, with a way back', async () => {
     mockFetch()
     render(<App />)
-    await screen.findByText('Cedarfall Energy')
-    await userEvent.type(screen.getByLabelText('Search customer or project'), 'Kestrel')
+    await userEvent.click(await screen.findByRole('row', { name: 'Open Cedarfall Energy' }))
 
-    await waitFor(() => expect(screen.queryByText('Cedarfall Energy')).not.toBeInTheDocument())
-    expect(screen.getByText('Kestrel Life')).toBeInTheDocument()
-  })
-
-  it('opens project details from the grid', async () => {
-    mockFetch()
-    render(<App />)
-    await userEvent.click(await screen.findByRole('button', { name: 'Data Platform Build' }))
-
-    const panel = await screen.findByRole('complementary', { name: /Details for Data Platform Build/ })
-    expect(await within(panel).findByText('No Client Partner')).toBeInTheDocument()
-    expect(within(panel).getByText('Riley Shah')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /Cedarfall Energy/ })).toBeInTheDocument()
+    expect(await screen.findByText('Needs attention')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Back to my projects/ }))
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'My projects' })).toBeInTheDocument())
   })
 })

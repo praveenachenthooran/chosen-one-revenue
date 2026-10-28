@@ -36,3 +36,7 @@ Thumbs.db
 # Internal source documents and demo data
 reference/
 
+
+# local visual QA (may contain confidential data)
+qa-screenshots/
+.playwright-mcp/

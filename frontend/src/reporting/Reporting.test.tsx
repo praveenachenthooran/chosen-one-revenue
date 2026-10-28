@@ -22,7 +22,7 @@ vi.mock('chart.js', () => {
     static register() {}
     destroy() {}
   }
-  return { Chart, CategoryScale: {}, LinearScale: {}, LineController: {}, LineElement: {}, PointElement: {}, Legend: {}, Tooltip: {} }
+  return { Chart, CategoryScale: {}, LinearScale: {}, LineController: {}, LineElement: {}, PointElement: {}, Legend: {}, Tooltip: {}, BarController: {}, BarElement: {}, Filler: {} }
 })
 
 function mockFetch(overrides: Routes = {}) {
@@ -44,7 +44,7 @@ function calls(method = 'GET'): Call[] {
 
 async function openTab(name: string) {
   render(<App />)
-  await userEvent.click(await screen.findByRole('tab', { name }))
+  await userEvent.click(await screen.findByRole('button', { name }))
 }
 
 const FINANCE: Routes = { '/api/auth/me': () => json(financeMe) }
@@ -61,17 +61,17 @@ describe('navigation', () => {
   it('shows Snapshots to everyone but Actuals and Accuracy only to Finance, leadership and Administrators', async () => {
     mockFetch()
     const first = render(<App />)
-    expect(await screen.findByRole('tab', { name: 'Snapshots' })).toBeInTheDocument()
-    expect(screen.queryByRole('tab', { name: 'Actuals' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('tab', { name: 'Accuracy' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Snapshots' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Actuals' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Accuracy' })).not.toBeInTheDocument()
     first.unmount()
 
     for (const routes of [FINANCE, CRO]) {
       vi.restoreAllMocks()
       mockFetch(routes)
       const view = render(<App />)
-      expect(await screen.findByRole('tab', { name: 'Actuals' })).toBeInTheDocument()
-      expect(screen.getByRole('tab', { name: 'Accuracy' })).toBeInTheDocument()
+      expect(await screen.findByRole('button', { name: 'Actuals' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Accuracy' })).toBeInTheDocument()
       view.unmount()
     }
   })
@@ -79,7 +79,7 @@ describe('navigation', () => {
   it('does not load reporting data until its tab is opened', async () => {
     mockFetch(FINANCE)
     render(<App />)
-    await screen.findByText('Cedarfall Energy')
+    expect(await screen.findByRole('heading', { name: 'All projects' })).toBeInTheDocument()
     expect(calls().some((c) => /snapshots|actuals|accuracy/.test(c.url))).toBe(false)
   })
 })
@@ -224,8 +224,8 @@ describe('Snapshots', () => {
 
     vi.restoreAllMocks()
     mockFetch({ '/api/v1/snapshots': () => json({ detail: 'boom' }, 500) })
-    await userEvent.click(screen.getByRole('tab', { name: 'Forecast' }))
-    await userEvent.click(screen.getByRole('tab', { name: 'Snapshots' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Monthly grid' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Snapshots' }))
     expect(await screen.findByText('Snapshots could not be loaded.')).toBeInTheDocument()
     expect(screen.getByText('The live forecast is unaffected.')).toBeInTheDocument()
   })
@@ -431,11 +431,12 @@ describe('change history', () => {
         json({ items: [{ ...history[0], post_snapshot: true }, history[1]], total_items: 2 }),
     })
     render(<App />)
-    await userEvent.click(await screen.findByRole('button', { name: 'Data Platform Build' }))
-    const panel = await screen.findByRole('complementary', { name: /Details for Data Platform Build/ })
-    const section = await within(panel).findByRole('region', { name: 'Change history' })
+    await userEvent.click(await screen.findByRole('row', { name: 'Open Cedarfall Energy' }))
+    const heading = await screen.findByText('Change history')
+    await userEvent.click(heading)
+    const section = heading.closest('details') as HTMLElement
     const entries = await within(section).findAllByRole('listitem')
-    expect(within(entries[0]).getByText('Post-snapshot change')).toBeInTheDocument()
-    expect(within(entries[1]).queryByText('Post-snapshot change')).not.toBeInTheDocument()
+    expect(within(entries[0]).getByText('Changed after the last snapshot')).toBeInTheDocument()
+    expect(within(entries[1]).queryByText('Changed after the last snapshot')).not.toBeInTheDocument()
   })
 })

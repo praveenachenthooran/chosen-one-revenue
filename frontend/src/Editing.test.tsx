@@ -32,6 +32,11 @@ const savedResult = {
 }
 
 /** The month cell for a project in the (centre) scrolling part of the grid. */
+async function openGrid() {
+  await userEvent.click(await screen.findByRole('button', { name: 'Monthly grid' }))
+  await screen.findByText('Cedarfall Energy')
+}
+
 function cell(projectId: number, month: string): HTMLElement {
   const found = document.querySelector(
     `.ag-center-cols-container [row-id="${projectId}"] [col-id="${month}"]`,
@@ -57,7 +62,7 @@ describe('editing in the grid', () => {
   it('lets the owner edit a month, saving with the expected previous value and CSRF token', async () => {
     mockFetch({ [EDIT_URL]: () => json(savedResult) })
     render(<App />)
-    await screen.findByText('Cedarfall Energy')
+    await openGrid()
 
     expect(cell(1, '2026-10-01')).toHaveClass('cell-editable')
     await typeInto(cell(1, '2026-10-01'), '1500')
@@ -81,7 +86,7 @@ describe('editing in the grid', () => {
       return mockApi(okRoutes)(input, init)
     })
     render(<App />)
-    await screen.findByText('Cedarfall Energy')
+    await openGrid()
 
     await typeInto(cell(1, '2026-10-01'), '1600')
 
@@ -97,7 +102,7 @@ describe('editing in the grid', () => {
     async (bad) => {
       mockFetch({ [EDIT_URL]: () => json(savedResult) })
       render(<App />)
-      await screen.findByText('Cedarfall Energy')
+      await openGrid()
 
       await typeInto(cell(1, '2026-10-01'), bad)
 
@@ -110,7 +115,7 @@ describe('editing in the grid', () => {
   it('accepts a typed dollar sign and thousands separators', async () => {
     mockFetch({ [EDIT_URL]: () => json(savedResult) })
     render(<App />)
-    await screen.findByText('Cedarfall Energy')
+    await openGrid()
 
     await typeInto(cell(1, '2026-10-01'), '$12,500.50')
 
@@ -121,7 +126,7 @@ describe('editing in the grid', () => {
   it('does not call the server when the value is unchanged', async () => {
     mockFetch()
     render(<App />)
-    await screen.findByText('Cedarfall Energy')
+    await openGrid()
 
     await typeInto(cell(1, '2026-10-01'), '1250.5')
 
@@ -132,6 +137,7 @@ describe('editing in the grid', () => {
   it('keeps projects the user does not own read-only', async () => {
     mockFetch()
     render(<App />)
+    await openGrid()
     await screen.findByText('Kestrel Life')
 
     const readOnly = cell(2, '2026-09-01')
@@ -147,7 +153,7 @@ describe('editing in the grid', () => {
       [EDIT_URL]: () => json({ detail: { code: 'not_project_owner', message, owners: [] } }, 403),
     })
     render(<App />)
-    await screen.findByText('Cedarfall Energy')
+    await openGrid()
 
     await typeInto(cell(1, '2026-10-01'), '2000')
 
@@ -161,7 +167,7 @@ describe('editing in the grid', () => {
         json({ detail: { code: 'invalid_amount', message: 'Enter a plain number.' } }, 422),
     })
     render(<App />)
-    await screen.findByText('Cedarfall Energy')
+    await openGrid()
 
     await typeInto(cell(1, '2026-10-01'), '2000')
     expect(await screen.findByRole('alert')).toHaveTextContent('Enter a plain number.')
@@ -182,7 +188,7 @@ describe('editing in the grid', () => {
       },
     })
     render(<App />)
-    await screen.findByText('Cedarfall Energy')
+    await openGrid()
 
     await typeInto(cell(1, '2026-10-01'), '2000')
 
@@ -197,7 +203,7 @@ describe('editing in the grid', () => {
       [EDIT_URL]: () => json({ detail: { code: 'not_authenticated', message: 'Sign in.' } }, 401),
     })
     render(<App />)
-    await screen.findByText('Cedarfall Energy')
+    await openGrid()
 
     await typeInto(cell(1, '2026-10-01'), '2000')
 
@@ -214,7 +220,7 @@ describe('editing in the grid', () => {
       },
     })
     render(<App />)
-    await screen.findByText('Cedarfall Energy')
+    await openGrid()
     await typeInto(cell(1, '2026-10-01'), '1500')
 
     await waitFor(() => expect(document.querySelector('.ag-floating-bottom')).toHaveTextContent('$99,999'))
@@ -225,6 +231,7 @@ describe('editing in the project panel, and change history', () => {
   afterEach(() => vi.restoreAllMocks())
 
   async function openPanel(name: string) {
+    await openGrid()
     await userEvent.click(await screen.findByRole('button', { name }))
     return screen.findByRole('complementary', { name: new RegExp(`Details for ${name}`) })
   }

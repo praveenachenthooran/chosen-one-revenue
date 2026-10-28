@@ -36,3 +36,25 @@ export function parseAmountInput(raw: string): string | null {
   const plain = text.replace(/[$,\s]/g, '')
   return /^\d{1,12}(\.\d{1,2})?$/.test(plain) ? plain : null
 }
+
+/** Compact dollars for axes and KPI tiles: $950, $43K, $1.25M. */
+export function formatMoneyShort(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === '') return ''
+  const number = Number(value)
+  if (Number.isNaN(number)) return ''
+  const abs = Math.abs(number)
+  const sign = number < 0 ? '-' : ''
+  if (abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(2)}M`
+  if (abs >= 1e3) return `${sign}$${Math.round(abs / 1e3)}K`
+  return `${sign}$${Math.round(abs)}`
+}
+
+export function formatPercent(value: number, digits = 1): string {
+  const sign = value > 0 ? '+' : value < 0 ? '-' : ''
+  return `${sign}${Math.abs(value * 100).toFixed(digits)}%`
+}
+
+export function formatDate(iso: string | null | undefined): string {
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}

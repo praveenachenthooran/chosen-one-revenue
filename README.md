@@ -1,6 +1,6 @@
-# The Chosen One
+# Biggie Revenue
 
-The Chosen One is BIG's internal revenue forecasting application. This repository contains the Milestone 0 foundation (React frontend, FastAPI backend, PostgreSQL, tests, local containers) and Milestone 1: the revenue data model, the Excel migration, a read-only forecast API and a read-only AG Grid forecast. Milestone 2 adds Google Workspace sign-in, role and row-level permissions, monthly editing and audit history. Milestone 3 adds the read-only HubSpot pipeline: weighted deals, Closed Won drafts and combined totals. Milestone 4 adds immutable monthly snapshots, Excel/CSV exports, monthly actuals and the forecast accuracy report. Milestone 5 adds the QA engine, the AI Revenue Detective and Forecast Health.
+Biggie Revenue (formerly The Chosen One) is BIG's internal revenue forecasting application. The interface, the three role experiences and the open business decisions are described in [docs/biggie-revenue-ui.md](docs/biggie-revenue-ui.md). This repository contains the Milestone 0 foundation (React frontend, FastAPI backend, PostgreSQL, tests, local containers) and Milestone 1: the revenue data model, the Excel migration, a read-only forecast API and a read-only AG Grid forecast. Milestone 2 adds Google Workspace sign-in, role and row-level permissions, monthly editing and audit history. Milestone 3 adds the read-only HubSpot pipeline: weighted deals, Closed Won drafts and combined totals. Milestone 4 adds immutable monthly snapshots, Excel/CSV exports, monthly actuals and the forecast accuracy report. Milestone 5 adds the QA engine, the AI Revenue Detective and Forecast Health.
 
 ## Required tools
 
