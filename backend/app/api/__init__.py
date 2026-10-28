@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.api import edits, imports, pipeline, projects, reporting
+from app.api import edits, imports, pipeline, projects, qa, reporting
 from app.auth.deps import current_user
 
 # Every forecast endpoint requires a signed-in, provisioned user. Row-level rules are enforced
@@ -10,4 +10,5 @@ router.include_router(projects.router)
 router.include_router(edits.router)
 router.include_router(pipeline.router)
 router.include_router(reporting.router)
+router.include_router(qa.router)
 router.include_router(imports.router)
