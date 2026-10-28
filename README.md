@@ -1,6 +1,6 @@
 # The Chosen One
 
-The Chosen One is BIG's internal revenue forecasting application. This repository contains the Milestone 0 foundation (React frontend, FastAPI backend, PostgreSQL, tests, local containers) and Milestone 1: the revenue data model, the Excel migration, a read-only forecast API and a read-only AG Grid forecast. Milestone 2 adds Google Workspace sign-in, role and row-level permissions, monthly editing and audit history. Milestone 3 adds the read-only HubSpot pipeline: weighted deals, Closed Won drafts and combined totals. AI features are not implemented yet.
+The Chosen One is BIG's internal revenue forecasting application. This repository contains the Milestone 0 foundation (React frontend, FastAPI backend, PostgreSQL, tests, local containers) and Milestone 1: the revenue data model, the Excel migration, a read-only forecast API and a read-only AG Grid forecast. Milestone 2 adds Google Workspace sign-in, role and row-level permissions, monthly editing and audit history. Milestone 3 adds the read-only HubSpot pipeline: weighted deals, Closed Won drafts and combined totals. Milestone 4 adds immutable monthly snapshots, Excel/CSV exports, monthly actuals and the forecast accuracy report. AI features are not implemented yet.
 
 ## Required tools
 
@@ -148,6 +148,32 @@ details and rules in [docs/milestone-3-notes.md](docs/milestone-3-notes.md)).
 HubSpot settings are in `backend/.env.example` (`HUBSPOT_SOURCE`, `HUBSPOT_WORKBOOK_PATH`,
 `HUBSPOT_ACCESS_TOKEN` for the future live adapter, `DRAFT_CONFIRMATION_BUSINESS_DAYS`,
 `HUBSPOT_STALE_AFTER_MINUTES`).
+
+## Milestone 4: snapshots, exports, actuals and accuracy
+
+Immutable monthly forecast snapshots, Excel/CSV exports, actuals uploads and the accuracy report (rules,
+assumptions and the PRD ambiguities in [docs/milestone-4-notes.md](docs/milestone-4-notes.md)).
+
+1. Apply migrations: `cd backend` then `uv run alembic upgrade head` (adds the snapshot, actuals, job and export
+   tables).
+2. Snapshots, from the `backend` folder (or the **Snapshots** tab):
+
+   ```powershell
+   uv run python -m app.snapshots scheduled   # the monthly job: safe to repeat; takes this month's snapshot if due and missing
+   uv run python -m app.snapshots manual --note "Board pack"
+   uv run python -m app.snapshots list
+   ```
+
+   Schedule `scheduled` to run every weekday (Railway cron: `/opt/venv/bin/python -m app.snapshots scheduled` in the image). It only acts on
+   or after the month's first business day, and only once a month.
+3. Open <http://localhost:5173>. **Snapshots** is for everyone: history, stored totals with the PRD filters,
+   integrity check and Excel/CSV export (Finance and Administrators can also take a snapshot now). The
+   **Pipeline** tab has export links for the current view. **Actuals** and **Accuracy** are for Finance, Sales
+   leadership and Administrators (Finance and Administrators can upload).
+4. Actuals file: a .csv or .xlsx with a header row and columns Month, Amount, and either Project ID or Customer
+   (with Project to narrow it down). **Check file** validates without saving; **Upload actuals** is all or nothing.
+
+No new environment variables are needed.
 
 ## Environment variables
 
