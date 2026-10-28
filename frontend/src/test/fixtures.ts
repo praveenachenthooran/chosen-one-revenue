@@ -1,5 +1,9 @@
 import type {
   AccuracyReport,
+  Finding,
+  FindingDetail,
+  Health,
+  Investigation,
   ActualMonth,
   AuthStatus,
   Confirmation,
@@ -560,6 +564,139 @@ export const reportingRoutes: Routes = {
   '/api/v1/accuracy': () => json(accuracy),
 }
 
+// ---- Quality fixtures -----------------------------------------------------------------------------
+
+export const finding1: Finding = {
+  id: 11,
+  rule_code: 'mom_anomaly',
+  rule_label: 'Unusual month-over-month revenue movement',
+  severity: 'warning',
+  title: 'Unusual revenue rise: Data Platform Co - Data Platform Build',
+  summary: 'R1008 moves $30,000.00 to $51,000.00 in Mar 2027 (70.0%) with no reason recorded.',
+  status: 'open',
+  financial_impact: '21000.00',
+  routed_to_id: 7,
+  routed_to_name: 'Avery Chen',
+  project_id: 1,
+  opportunity_id: null,
+  related_project_ids: [],
+  created_at: '2026-10-27T09:00:00Z',
+  last_seen_at: '2026-10-27T09:00:00Z',
+  reviewed_by_name: null,
+  reviewed_at: null,
+  review_reason: null,
+  investigation_status: null,
+  awaiting_review: false,
+  can_review: true,
+}
+export const finding2: Finding = {
+  ...finding1,
+  id: 12,
+  rule_code: 'missing_required',
+  rule_label: 'Missing required fields',
+  severity: 'error',
+  title: 'Missing owner: Ironleaf Manufacturing - Plant Systems',
+  summary: 'R1014 is missing: owner.',
+  financial_impact: '120000.00',
+  routed_to_id: null,
+  routed_to_name: null,
+  project_id: 2,
+  can_review: false,
+}
+export const finding3: Finding = {
+  ...finding1,
+  id: 13,
+  rule_code: 'closed_won_missing',
+  rule_label: 'Closed Won deal not in the committed forecast',
+  title: 'Closed Won not committed: Brightharbor - Claims AI Pilot',
+  summary: 'Deal 65394918517 is Closed Won ($186,000.00) but its draft has not been confirmed.',
+  project_id: 55,
+  opportunity_id: 2,
+  financial_impact: '186000.00',
+  investigation_status: 'completed',
+  awaiting_review: true,
+}
+
+export const completedInvestigation: Investigation = {
+  id: 5,
+  finding_id: 11,
+  status: 'completed',
+  mode: 'deterministic',
+  model: null,
+  requested_by_label: 'Avery Chen',
+  started_at: '2026-10-27T10:00:00Z',
+  finished_at: '2026-10-27T10:00:02Z',
+  fallback_reason: 'No Anthropic API key is configured.',
+  error_message: null,
+  steps: [
+    { tool: 'get_project_history', arguments: { project_id: 1 }, refs: ['project:1'], outcome: 'ok' },
+    { tool: 'get_hubspot_deals', arguments: { company: 'Data Platform Co' }, refs: ['deal:9'], outcome: 'ok' },
+  ],
+  result: {
+    summary: 'R1008 has an unexplained 70.0% movement in 2027-03; the records confirm the figures but not why they changed.',
+    confidence: 'medium',
+    causes: [
+      { statement: 'Revenue moves from 30000.00 to 51000.00 in 2027-03 (70.0%).', status: 'confirmed', evidence_refs: ['project:1'] },
+      { statement: 'A Closed Lost deal exists for the same customer; nothing links it to this movement.', status: 'hypothesis', evidence_refs: ['deal:9', 'project:1'] },
+      { statement: 'The author of the change cannot be determined.', status: 'insufficient_evidence', evidence_refs: [] },
+    ],
+    next_steps: [{ action: 'Ask the row owner what changed and record a reason code.', who: 'Avery Chen (client partner)' }],
+    limitations: ['Fewer than two snapshots exist.'],
+    financial_impact: { amount: '21000.00', basis: 'the size of the largest month-over-month movement', source: 'deterministic' },
+  },
+}
+
+export const findingDetail: FindingDetail = {
+  ...finding1,
+  evidence: { project: { row_id: 'R1008', customer: 'Data Platform Co' }, billing_type: 'T&M' },
+  suggested_fix: 'Ask the owner what changed. If it is intended, record the reason when editing the month.',
+  projects: [{ project_id: 1, row_id: 'R1008', customer: 'Data Platform Co', name: 'Data Platform Build', status: 'Active' }],
+  deal: null,
+  events: [
+    { id: 1, event_type: 'created', created_at: '2026-10-27T09:00:00Z', actor_label: 'qa-engine', message: 'Raised by the mom_anomaly check: Unusual revenue rise', details: {} },
+  ],
+  investigations: [],
+  can_investigate: true,
+  ai_available: false,
+  ai_unavailable_reason: 'No Anthropic API key is configured.',
+}
+
+export const health: Health = {
+  status: 'red',
+  status_reasons: ['1 open error finding(s).', '2 open warning(s).'],
+  open_total: 3,
+  open_by_severity: { error: 1, warning: 2 },
+  open_by_rule: { mom_anomaly: 1, missing_required: 1, closed_won_missing: 1 },
+  revenue_at_stake: '327000.00',
+  unassigned_open: 1,
+  awaiting_review: 1,
+  owners: [
+    { user_id: 7, name: 'Avery Chen', open_findings: 2, revenue_at_stake: '207000.00', oldest_days: 3 },
+    { user_id: null, name: 'Unassigned (needs an owner)', open_findings: 1, revenue_at_stake: '120000.00', oldest_days: 0 },
+  ],
+  metrics: [
+    { key: 'open', label: 'Open findings', value: '3', formula: 'count of findings with status open' },
+    { key: 'triage_rate', label: 'Triaged', value: '0%', formula: '(accepted + dismissed) / (accepted + dismissed + open)' },
+  ],
+  last_run: {
+    id: 4, trigger: 'scheduled', status: 'completed', started_at: '2026-10-27T02:00:00Z', finished_at: '2026-10-27T02:00:03Z',
+    triggered_by_label: 'nightly job', findings_new: 3, findings_seen: 0, findings_reopened: 0, findings_resolved: 0,
+    findings_open: 3, rule_counts: {}, error_message: null,
+  },
+  last_success: null,
+  checks_overdue: false,
+  as_of: '2026-10-27',
+  can_run: false,
+}
+
+export const qualityRoutes: Routes = {
+  '/api/v1/qa/health': () => json(health),
+  '/api/v1/qa/findings': () => json({ items: [finding2, finding1, finding3], total_items: 3 }),
+  '/api/v1/qa/findings/11': () => json(findingDetail),
+  '/api/v1/qa/findings/12': () => json({ ...findingDetail, ...finding2, projects: [], can_investigate: false }),
+  '/api/v1/qa/findings/13': () => json({ ...findingDetail, ...finding3, projects: [], deal: { id: 1, hubspot_deal_id: '65394918517', name: 'Pembrook - Appian Renewal', stage: 'Closed Won', lifecycle: 'closed_won', amount: '186000.00', company: 'Brightharbor' } }),
+}
+
 export const okRoutes: Routes = {
   '/api/health': () => json({ status: 'ok', service: 'chosen-one-api' }),
   '/api/auth/me': () => json(signedIn),
@@ -583,4 +720,5 @@ export const okRoutes: Routes = {
   'POST /api/auth/logout': () => json({ authenticated: false }),
   ...pipelineRoutes,
   ...reportingRoutes,
+  ...qualityRoutes,
 }

@@ -2,12 +2,13 @@ import { useCallback, useEffect, useState } from 'react'
 import { fetchAuth, signOut, type AuthUser } from './api'
 import ForecastWorkspace from './ForecastWorkspace'
 import PipelineView from './pipeline/PipelineView'
+import QualityView from './quality/QualityView'
 import AccuracyView from './reporting/AccuracyView'
 import ActualsView from './reporting/ActualsView'
 import SnapshotsView from './reporting/SnapshotsView'
 import SignIn from './components/SignIn'
 
-type View = 'forecast' | 'pipeline' | 'snapshots' | 'actuals' | 'accuracy'
+type View = 'forecast' | 'pipeline' | 'quality' | 'snapshots' | 'actuals' | 'accuracy'
 
 // Who may see actuals and the accuracy report, and who may load actuals (the server enforces both).
 const ACTUALS_VIEWERS = ['Finance', 'CRO / Sales Leadership', 'Administrator']
@@ -85,6 +86,7 @@ export default function App() {
   const [attempt, setAttempt] = useState(0)
   const [view, setView] = useState<View>('forecast')
   const [openProjectId, setOpenProjectId] = useState<number | null>(null)
+  const [openDeal, setOpenDeal] = useState<{ id: number; title: string } | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -154,6 +156,7 @@ export default function App() {
             [
               ['forecast', 'Forecast', true],
               ['pipeline', 'Pipeline', true],
+              ['quality', 'Quality', true],
               ['snapshots', 'Snapshots', true],
               ['actuals', 'Actuals', auth.user.roles.some((r) => ACTUALS_VIEWERS.includes(r))],
               ['accuracy', 'Accuracy', auth.user.roles.some((r) => ACTUALS_VIEWERS.includes(r))],
@@ -170,6 +173,7 @@ export default function App() {
                 className={`app-tab${view === id ? ' active' : ''}`}
                 onClick={() => {
                   setOpenProjectId(null)
+                  setOpenDeal(null)
                   setView(id)
                 }}
               >
@@ -205,6 +209,19 @@ export default function App() {
         {auth.kind === 'signedIn' && view === 'forecast' && (
           <ForecastWorkspace key={openProjectId ?? 'forecast'} onSessionEnded={onSessionEnded} initialProjectId={openProjectId} />
         )}
+        {auth.kind === 'signedIn' && view === 'quality' && (
+          <QualityView
+            onSessionEnded={onSessionEnded}
+            onOpenProject={(projectId) => {
+              setOpenProjectId(projectId)
+              setView('forecast')
+            }}
+            onOpenDeal={(deal) => {
+              setOpenDeal(deal)
+              setView('pipeline')
+            }}
+          />
+        )}
         {auth.kind === 'signedIn' && view === 'snapshots' && <SnapshotsView onSessionEnded={onSessionEnded} />}
         {auth.kind === 'signedIn' && view === 'actuals' && (
           <ActualsView
@@ -215,6 +232,8 @@ export default function App() {
         {auth.kind === 'signedIn' && view === 'accuracy' && <AccuracyView onSessionEnded={onSessionEnded} />}
         {auth.kind === 'signedIn' && view === 'pipeline' && (
           <PipelineView
+            key={openDeal?.id ?? 'pipeline'}
+            initialDeal={openDeal}
             user={auth.user}
             onSessionEnded={onSessionEnded}
             onOpenProject={(projectId) => {

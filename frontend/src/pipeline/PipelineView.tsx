@@ -45,9 +45,10 @@ type Props = {
   user: AuthUser
   onSessionEnded: () => void
   onOpenProject: (projectId: number) => void
+  initialDeal?: { id: number; title: string } | null
 }
 
-export default function PipelineView({ user, onSessionEnded, onOpenProject }: Props) {
+export default function PipelineView({ user, onSessionEnded, onOpenProject, initialDeal = null }: Props) {
   const [filters, setFilters] = useState<ForecastFilters>({})
   const [search, setSearch] = useState('')
   const [dealView, setDealView] = useState<string>('counting')
@@ -57,7 +58,7 @@ export default function PipelineView({ user, onSessionEnded, onOpenProject }: Pr
   const [statusError, setStatusError] = useState(false)
   const [confirmations, setConfirmations] = useState<Confirmation[]>([])
   const [options, setOptions] = useState<FilterOptions | null>(null)
-  const [selected, setSelected] = useState<{ id: number; title: string } | null>(null)
+  const [selected, setSelected] = useState<{ id: number; title: string } | null>(initialDeal)
   const [syncing, setSyncing] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [chartOpen, setChartOpen] = useState(false)

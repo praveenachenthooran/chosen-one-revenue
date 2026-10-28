@@ -627,3 +627,130 @@ export function uploadActuals(file: File, dryRun: boolean): Promise<UploadResult
     body: file,
   })
 }
+
+// ---- QA findings, investigations and Forecast Health (Milestone 5) ---------------------------
+
+export type Finding = {
+  id: number
+  rule_code: string
+  rule_label: string
+  severity: 'error' | 'warning' | 'info'
+  title: string
+  summary: string
+  status: 'open' | 'accepted' | 'dismissed' | 'resolved'
+  financial_impact: string
+  routed_to_id: number | null
+  routed_to_name: string | null
+  project_id: number | null
+  opportunity_id: number | null
+  related_project_ids: number[]
+  created_at: string
+  last_seen_at: string | null
+  reviewed_by_name: string | null
+  reviewed_at: string | null
+  review_reason: string | null
+  investigation_status: 'investigating' | 'completed' | 'failed' | null
+  awaiting_review: boolean
+  can_review: boolean
+}
+
+export type FindingEvent = {
+  id: number
+  event_type: string
+  created_at: string
+  actor_label: string
+  message: string
+  details: Record<string, unknown>
+}
+
+export type EvidenceCause = {
+  statement: string
+  status: 'confirmed' | 'hypothesis' | 'insufficient_evidence'
+  evidence_refs: string[]
+}
+
+export type InvestigationResult = {
+  summary: string
+  causes: EvidenceCause[]
+  next_steps: { action: string; who: string | null }[]
+  confidence: 'high' | 'medium' | 'low'
+  limitations: string[]
+  financial_impact: { amount: string; basis: string; source: string }
+}
+
+export type Investigation = {
+  id: number
+  finding_id: number
+  status: 'investigating' | 'completed' | 'failed'
+  mode: 'ai' | 'deterministic'
+  model: string | null
+  requested_by_label: string
+  started_at: string
+  finished_at: string | null
+  result: InvestigationResult | null
+  steps: { tool: string; arguments: Record<string, unknown>; refs: string[]; outcome: string }[]
+  fallback_reason: string | null
+  error_message: string | null
+}
+
+export type FindingDetail = Finding & {
+  evidence: Record<string, unknown>
+  suggested_fix: string | null
+  projects: { project_id: number; row_id: string; customer: string; name: string; status: string }[]
+  deal: { id: number; hubspot_deal_id: string; name: string; stage: string; lifecycle: string; amount: string | null; company: string | null } | null
+  events: FindingEvent[]
+  investigations: Investigation[]
+  can_investigate: boolean
+  ai_available: boolean
+  ai_unavailable_reason: string | null
+}
+
+export type QaRun = {
+  id: number
+  trigger: 'manual' | 'scheduled'
+  status: 'running' | 'completed' | 'failed'
+  started_at: string
+  finished_at: string | null
+  triggered_by_label: string
+  findings_new: number
+  findings_seen: number
+  findings_reopened: number
+  findings_resolved: number
+  findings_open: number
+  rule_counts: Record<string, number>
+  error_message: string | null
+}
+
+export type Health = {
+  status: 'green' | 'amber' | 'red'
+  status_reasons: string[]
+  open_total: number
+  open_by_severity: Record<string, number>
+  open_by_rule: Record<string, number>
+  revenue_at_stake: string
+  unassigned_open: number
+  awaiting_review: number
+  owners: { user_id: number | null; name: string; open_findings: number; revenue_at_stake: string; oldest_days: number }[]
+  metrics: { key: string; label: string; value: string; formula: string }[]
+  last_run: QaRun | null
+  last_success: QaRun | null
+  checks_overdue: boolean
+  as_of: string
+  can_run: boolean
+}
+
+export type FindingFilters = { status?: string; severity?: string; rule?: string; mine?: string; unassigned?: string }
+
+export const fetchHealth = (signal?: AbortSignal) => get<Health>('/v1/qa/health', signal)
+
+export const fetchFindings = (filters: FindingFilters, signal?: AbortSignal) =>
+  get<{ items: Finding[]; total_items: number }>(`/v1/qa/findings${query({ ...filters })}`, signal)
+
+export const fetchFinding = (id: number, signal?: AbortSignal) => get<FindingDetail>(`/v1/qa/findings/${id}`, signal)
+
+export const runChecks = () => send<QaRun>('POST', '/v1/qa/runs')
+
+export const decideFinding = (id: number, decision: 'accept' | 'dismiss', reason: string) =>
+  send<Finding>('POST', `/v1/qa/findings/${id}/${decision}`, { reason })
+
+export const startInvestigation = (id: number) => send<Investigation>('POST', `/v1/qa/findings/${id}/investigate`)
