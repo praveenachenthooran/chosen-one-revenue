@@ -208,6 +208,8 @@ class HistoryItem(OutModel):
     reason: str | None
     actor_name: str
     from_import: bool
+    # The edited month was already in a snapshot taken before this edit; the snapshot is unchanged.
+    post_snapshot: bool = False
 
 
 class HistoryPage(OutModel):

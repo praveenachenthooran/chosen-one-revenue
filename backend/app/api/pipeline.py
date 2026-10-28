@@ -23,6 +23,7 @@ from app.auth.roles import ADMIN, SALES_LEADERSHIP
 from app.config import Settings, get_settings
 from app.database import get_db_session
 from app.fiscal import fiscal_period, fiscal_year
+from app.locks import SYNC_LOCK_KEY
 from app.models import (
     Category,
     Customer,
@@ -85,7 +86,6 @@ router = APIRouter(tags=["pipeline"])
 Session = Annotated[AsyncSession, Depends(get_db_session)]
 AppSettings = Annotated[Settings, Depends(get_settings)]
 ZERO = Decimal("0.00")
-SYNC_LOCK_KEY = 7_301_001
 SyncRoles = frozenset({ADMIN, SALES_LEADERSHIP})
 
 

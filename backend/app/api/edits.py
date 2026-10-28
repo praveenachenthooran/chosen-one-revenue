@@ -5,7 +5,7 @@ check -> write the value and its audit event in ONE transaction.
 """
 
 import re
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated
 
@@ -18,7 +18,15 @@ from app.api.queries import month_columns
 from app.auth.deps import CurrentUser, require_csrf
 from app.auth.permissions import can_view_history, edit_decision, owner_summary
 from app.database import get_db_session
-from app.models import Project, ProjectMonthlyRevenue, ProjectOwner, RevenueRevision, User
+from app.models import (
+    ForecastSnapshot,
+    ForecastSnapshotMonth,
+    Project,
+    ProjectMonthlyRevenue,
+    ProjectOwner,
+    RevenueRevision,
+    User,
+)
 from app.schemas import HistoryItem, HistoryPage, RevenueEditRequest, RevenueEditResult
 
 router = APIRouter(tags=["forecast"])
@@ -180,6 +188,28 @@ async def edit_month(
     )
 
 
+async def _first_snapshot_times(session: AsyncSession, months: set[date]) -> dict[date, datetime]:
+    """When each month first appeared in a snapshot."""
+    if not months:
+        return {}
+    rows = await session.execute(
+        select(ForecastSnapshotMonth.month, func.min(ForecastSnapshot.taken_at))
+        .join(ForecastSnapshot, ForecastSnapshot.id == ForecastSnapshotMonth.snapshot_id)
+        .where(ForecastSnapshotMonth.month.in_(months))
+        .group_by(ForecastSnapshotMonth.month)
+    )
+    return {month: taken for month, taken in rows}
+
+
+def _is_post_snapshot(revision: RevenueRevision, first_snapshot: dict[date, datetime]) -> bool:
+    """PRD: an edit to an already-snapshotted month is allowed, the snapshot is unchanged and the
+    edit is flagged. The workbook import is not an edit."""
+    if revision.month is None or revision.actor_label == IMPORT_ACTOR:
+        return False
+    taken = first_snapshot.get(revision.month)
+    return taken is not None and taken < revision.created_at
+
+
 @router.get("/projects/{project_id}/history", response_model=HistoryPage)
 async def project_history(
     project_id: int,
@@ -218,6 +248,10 @@ async def project_history(
         .limit(limit)
         .offset(offset)
     )
+    revisions = list(rows)
+    first_snapshot = await _first_snapshot_times(
+        session, {r.month for r, _ in revisions if r.month}
+    )
     return HistoryPage(
         items=[
             HistoryItem(
@@ -231,8 +265,9 @@ async def project_history(
                 reason=r.note,
                 actor_name=name or r.actor_label,
                 from_import=r.actor_user_id is None and r.actor_label == IMPORT_ACTOR,
+                post_snapshot=_is_post_snapshot(r, first_snapshot),
             )
-            for r, name in rows
+            for r, name in revisions
         ],
         total_items=total or 0,
     )
