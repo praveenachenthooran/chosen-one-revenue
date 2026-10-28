@@ -9,6 +9,7 @@ from app.models.pipeline import (
     PipelineEvent,
 )
 from app.models.projects import Category, Customer, Project, ProjectOwner
+from app.models.qa import Investigation, QaFindingEvent, QaRun
 from app.models.reporting import (
     ActualsUpload,
     ExportEvent,
@@ -44,6 +45,7 @@ __all__ = [
     "ImportIssue",
     "ImportReconciliation",
     "ImportRun",
+    "Investigation",
     "JobRun",
     "MonthlyActual",
     "OwnerAttestation",
@@ -52,6 +54,8 @@ __all__ = [
     "ProjectMonthlyRevenue",
     "ProjectOwner",
     "QaFinding",
+    "QaFindingEvent",
+    "QaRun",
     "RevenueRevision",
     "Role",
     "User",

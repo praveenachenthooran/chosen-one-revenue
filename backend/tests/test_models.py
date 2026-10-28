@@ -166,7 +166,10 @@ async def test_deal_links_to_at_most_one_project(session: AsyncSession) -> None:
         lambda pid: RevenueRevision(
             project_id=pid, field="x", change_type="rename", actor_label="t"
         ),
-        lambda pid: QaFinding(project_id=pid, rule_code="r", summary="s", status="dismissed"),
+        lambda pid: QaFinding(
+            project_id=pid, fingerprint="f", rule_code="r", title="t", summary="s",
+            status="dismissed",
+        ),
     ],
     ids=[
         "month-not-first", "negative-amount", "actual-month-not-first", "bad-owner-role",
@@ -206,7 +209,10 @@ async def test_qa_finding_review_requires_reviewer_and_reason(session: AsyncSess
     reviewer = User(code="CRO", name="Demo CRO")
     session.add(reviewer)
     await session.flush()
-    finding = QaFinding(project_id=project.id, rule_code="duplicate", summary="Looks duplicated")
+    finding = QaFinding(
+        project_id=project.id, fingerprint="fp1", rule_code="duplicate", title="Dup",
+        summary="Looks duplicated",
+    )  # fmt: skip
     session.add(finding)
     await session.commit()
     assert finding.status == "open" and finding.severity == "warning" and finding.evidence == {}

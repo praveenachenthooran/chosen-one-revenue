@@ -81,27 +81,47 @@ class RevenueRevision(Base):
 
 
 class QaFinding(Base):
-    """An AI QA finding awaiting human accept/dismiss (the agent never edits data)."""
+    """A QA finding awaiting a human decision (the agent and the engine never edit data).
+
+    One row per fingerprint, ever: repeated runs update `last_seen` instead of adding rows, and a
+    finding the engine no longer detects is marked `resolved` (and reopened if it returns).
+    """
 
     __tablename__ = "qa_findings"
     __table_args__ = (
-        CheckConstraint("status IN ('open', 'accepted', 'dismissed')", name="status_valid"),
         CheckConstraint(
-            "status = 'open' OR (reviewed_by_id IS NOT NULL AND review_reason IS NOT NULL)",
+            "status IN ('open', 'accepted', 'dismissed', 'resolved')", name="status_valid"
+        ),
+        CheckConstraint(
+            "status IN ('open', 'resolved') "
+            "OR (reviewed_by_id IS NOT NULL AND review_reason IS NOT NULL)",
             name="review_recorded",
         ),
+        CheckConstraint("severity IN ('error', 'warning', 'info')", name="severity_valid"),
+        UniqueConstraint("fingerprint"),
+        Index("ix_qa_findings_status", "status"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64))
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
     opportunity_id: Mapped[int | None] = mapped_column(ForeignKey("hubspot_opportunities.id"))
+    related_project_ids: Mapped[list[int]] = mapped_column(
+        JSONB, server_default=text("'[]'::jsonb")
+    )
     rule_code: Mapped[str] = mapped_column(String(64))
     severity: Mapped[str] = mapped_column(String(16), server_default=text("'warning'"))
+    title: Mapped[str] = mapped_column(String(300))
     summary: Mapped[str] = mapped_column(Text)
     evidence: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     suggested_fix: Mapped[str | None] = mapped_column(Text)
+    # Deterministic estimate of the forecast revenue involved (see docs/milestone-5-notes.md).
+    financial_impact: Mapped[Decimal] = mapped_column(Money, server_default=text("0"))
     status: Mapped[str] = mapped_column(String(16), server_default=text("'open'"))
     routed_to_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    first_run_id: Mapped[int | None] = mapped_column(ForeignKey("qa_runs.id"))
+    last_run_id: Mapped[int | None] = mapped_column(ForeignKey("qa_runs.id"))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reviewed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     review_reason: Mapped[str | None] = mapped_column(Text)

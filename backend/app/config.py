@@ -1,9 +1,10 @@
 """The Chosen One backend application."""
 
+from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import AnyHttpUrl, SecretStr
+from pydantic import AnyHttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 MIN_SESSION_SECRET_LENGTH = 32
@@ -43,6 +44,38 @@ class Settings(BaseSettings):
     # PRD: sync at least every 60 minutes; the UI warns once the last good sync is older.
     hubspot_stale_after_minutes: int = 60
     frontend_url: AnyHttpUrl = AnyHttpUrl("http://localhost:5173")
+
+    # --- QA engine and AI Revenue Detective (Milestone 5) ---
+    # Thresholds from the PRD; each is configurable but defaults to the PRD value.
+    qa_stale_days: int = 30  # rows in the 3-month window not updated for this long
+    qa_mismatch_percent: Decimal = Decimal("10")  # HubSpot amount vs committed schedule
+    qa_anomaly_min_amount: Decimal = Decimal("5000")  # month-over-month change, at least this ...
+    qa_anomaly_min_percent: Decimal = Decimal(
+        "30"
+    )  # ... and at least this share of the prior month
+    # Claude is used only when a key is present AND the enterprise data-use approval is switched on.
+    anthropic_model: str = "claude-sonnet-5-5"
+    ai_data_use_approved: bool = False
+    ai_monthly_call_limit: int = (
+        200  # investigations run by Claude per calendar month (cost ceiling)
+    )
+    ai_timeout_seconds: int = 60
+
+    @field_validator("database_url")
+    @classmethod
+    def _async_driver(cls, value: str) -> str:
+        """Railway supplies postgresql://; SQLAlchemy needs the asyncpg driver named."""
+        for prefix in ("postgres://", "postgresql://"):
+            if value.startswith(prefix):
+                return "postgresql+asyncpg://" + value[len(prefix) :]
+        return value
+
+    @property
+    def ai_enabled(self) -> bool:
+        """Claude may be called only with credentials and the approved data-use switch."""
+        return bool(self.anthropic_api_key and self.anthropic_api_key.get_secret_value()) and (
+            self.ai_data_use_approved
+        )
 
     @property
     def is_hosted(self) -> bool:
