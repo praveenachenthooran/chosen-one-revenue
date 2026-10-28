@@ -130,3 +130,19 @@
 .stages-panel { background: #fff; border: 1px solid rgb(23 33 58 / 8%); border-radius: 0.75rem; padding: 0.6rem 1rem; }
 .stage-input { width: 90px; margin-left: auto; }
 @media (max-width: 900px) { .pipeline-layout { flex-direction: column; } .app-tabs { padding: 0 1rem; } }
+
+/* Snapshots, exports, actuals and accuracy (Milestone 4) */
+.report-layout { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+.report-section { background: #fff; border: 1px solid rgb(23 33 58 / 8%); border-radius: 0.75rem; padding: 0.8rem 1rem; }
+.snapshot-note { max-width: 24rem; }
+.actuals-file { max-width: 22rem; }
+.snapshot-kind { margin-left: 0.5rem; font-size: 0.7rem; font-weight: 700; padding: 0.1rem 0.45rem; border-radius: 999px; background: #e8edf7; color: #3a4666; }
+.kind-scheduled { background: #e3f5ea; color: #136c3a; }
+.export-links { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.export-links select { width: auto; }
+.upload-status { font-size: 0.75rem; font-weight: 600; padding: 0.1rem 0.55rem; border-radius: 999px; background: #e3f5ea; color: #136c3a; white-space: nowrap; }
+.upload-rejected { background: #fbe6e6; color: #a32626; }
+.variance-ok { color: #136c3a; }
+.variance-flag { color: #a32626; font-weight: 600; }
+.flag-badge, .post-snapshot-badge { margin-left: 0.4rem; font-size: 0.7rem; font-weight: 700; padding: 0.1rem 0.45rem; border-radius: 999px; background: #a32626; color: #fff; white-space: nowrap; }
+.post-snapshot-badge { margin-left: 0; background: #9a5b00; }

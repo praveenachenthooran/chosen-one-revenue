@@ -2,7 +2,16 @@ import { useCallback, useEffect, useState } from 'react'
 import { fetchAuth, signOut, type AuthUser } from './api'
 import ForecastWorkspace from './ForecastWorkspace'
 import PipelineView from './pipeline/PipelineView'
+import AccuracyView from './reporting/AccuracyView'
+import ActualsView from './reporting/ActualsView'
+import SnapshotsView from './reporting/SnapshotsView'
 import SignIn from './components/SignIn'
+
+type View = 'forecast' | 'pipeline' | 'snapshots' | 'actuals' | 'accuracy'
+
+// Who may see actuals and the accuracy report, and who may load actuals (the server enforces both).
+const ACTUALS_VIEWERS = ['Finance', 'CRO / Sales Leadership', 'Administrator']
+const ACTUALS_LOADERS = ['Finance', 'Administrator']
 
 type Health = { status: string; service: string }
 type HealthState = { kind: 'loading' } | { kind: 'ready'; health: Health } | { kind: 'error' }
@@ -74,7 +83,7 @@ export default function App() {
   const health = useHealth()
   const [auth, setAuth] = useState<AuthState>({ kind: 'loading' })
   const [attempt, setAttempt] = useState(0)
-  const [view, setView] = useState<'forecast' | 'pipeline'>('forecast')
+  const [view, setView] = useState<View>('forecast')
   const [openProjectId, setOpenProjectId] = useState<number | null>(null)
 
   useEffect(() => {
@@ -143,25 +152,30 @@ export default function App() {
         <nav className="app-tabs" role="tablist" aria-label="Views">
           {(
             [
-              ['forecast', 'Forecast'],
-              ['pipeline', 'Pipeline'],
+              ['forecast', 'Forecast', true],
+              ['pipeline', 'Pipeline', true],
+              ['snapshots', 'Snapshots', true],
+              ['actuals', 'Actuals', auth.user.roles.some((r) => ACTUALS_VIEWERS.includes(r))],
+              ['accuracy', 'Accuracy', auth.user.roles.some((r) => ACTUALS_VIEWERS.includes(r))],
             ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              id={`tab-${id}`}
-              aria-selected={view === id}
-              className={`app-tab${view === id ? ' active' : ''}`}
-              onClick={() => {
-                setOpenProjectId(null)
-                setView(id)
-              }}
-            >
-              {label}
-            </button>
-          ))}
+          )
+            .filter(([, , visible]) => visible)
+            .map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                id={`tab-${id}`}
+                aria-selected={view === id}
+                className={`app-tab${view === id ? ' active' : ''}`}
+                onClick={() => {
+                  setOpenProjectId(null)
+                  setView(id)
+                }}
+              >
+                {label}
+              </button>
+            ))}
         </nav>
       )}
 
@@ -191,6 +205,14 @@ export default function App() {
         {auth.kind === 'signedIn' && view === 'forecast' && (
           <ForecastWorkspace key={openProjectId ?? 'forecast'} onSessionEnded={onSessionEnded} initialProjectId={openProjectId} />
         )}
+        {auth.kind === 'signedIn' && view === 'snapshots' && <SnapshotsView onSessionEnded={onSessionEnded} />}
+        {auth.kind === 'signedIn' && view === 'actuals' && (
+          <ActualsView
+            canUpload={auth.user.roles.some((r) => ACTUALS_LOADERS.includes(r))}
+            onSessionEnded={onSessionEnded}
+          />
+        )}
+        {auth.kind === 'signedIn' && view === 'accuracy' && <AccuracyView onSessionEnded={onSessionEnded} />}
         {auth.kind === 'signedIn' && view === 'pipeline' && (
           <PipelineView
             user={auth.user}

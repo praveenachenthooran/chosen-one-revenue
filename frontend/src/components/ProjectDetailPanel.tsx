@@ -74,6 +74,13 @@ function HistorySection({ state }: { state: HistoryState }) {
                 {item.from_import ? 'Excel import' : item.actor_name}
                 {item.reason ? ` · “${item.reason}”` : ''}
               </div>
+              {item.post_snapshot && (
+                <div>
+                  <span className="post-snapshot-badge" title="This month was already in a snapshot taken before this edit. The snapshot is unchanged.">
+                    Post-snapshot change
+                  </span>
+                </div>
+              )}
             </li>
           ))}
         </ol>

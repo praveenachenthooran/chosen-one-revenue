@@ -115,17 +115,27 @@ export type HistoryItem = {
   reason: string | null
   actor_name: string
   from_import: boolean
+  post_snapshot: boolean
 }
 
 export class ApiError extends Error {
   readonly status: number
   readonly code: string | null
   readonly currentAmount: string | null
-  constructor(status: number, message: string, code: string | null = null, currentAmount: string | null = null) {
+  /** The whole error detail, for errors that carry more than a message (an upload's report). */
+  readonly detail: Record<string, unknown> | null
+  constructor(
+    status: number,
+    message: string,
+    code: string | null = null,
+    currentAmount: string | null = null,
+    detail: Record<string, unknown> | null = null,
+  ) {
     super(message)
     this.status = status
     this.code = code
     this.currentAmount = currentAmount
+    this.detail = detail
   }
 }
 
@@ -138,7 +148,7 @@ async function failure(response: Response): Promise<ApiError> {
     const detail = body.detail
     if (detail && typeof detail === 'object' && 'message' in detail) {
       const d = detail as { message: string; code?: string; current_amount?: string | null }
-      return new ApiError(response.status, d.message, d.code ?? null, d.current_amount ?? null)
+      return new ApiError(response.status, d.message, d.code ?? null, d.current_amount ?? null, detail as Record<string, unknown>)
     }
     if (typeof detail === 'string') return new ApiError(response.status, detail)
   } catch {
@@ -447,3 +457,173 @@ export const confirmDraft = (
     `/v1/pipeline/drafts/${projectId}/confirm`,
     body,
   )
+
+// ---- Snapshots, exports, actuals and accuracy (Milestone 4) -----------------------------------
+
+export type Snapshot = {
+  id: number
+  label: string
+  period_month: string
+  kind: 'scheduled' | 'manual'
+  taken_at: string
+  taken_by_label: string
+  note: string | null
+  as_of: string | null
+  import_run_id: number | null
+  sync_run_id: number | null
+  stage_probabilities: { name: string; probability: string; kind: string; in_forecast: boolean }[]
+  committed_total: string
+  weighted_total: string
+  combined_total: string
+  unphased_deals: number
+  unphased_weighted: string
+  outside_window_weighted: string
+  project_count: number
+  deal_count: number
+  line_count: number
+  checksum: string
+}
+
+export type JobRun = {
+  id: number
+  job: string
+  started_at: string
+  finished_at: string
+  status: 'completed' | 'skipped' | 'failed'
+  message: string
+  snapshot_id: number | null
+}
+
+export type SnapshotList = {
+  items: Snapshot[]
+  next_scheduled: string
+  scheduled_taken_this_month: boolean
+  last_job: JobRun | null
+  can_take: boolean
+}
+
+export type SnapshotTotals = {
+  snapshot: Snapshot
+  months: ForecastMonth[]
+  fiscal_years: { fiscal_year: string; committed: string; weighted: string; total: string }[]
+  committed_total: string
+  weighted_total: string
+  combined_total: string
+  unphased: { deals: number; weighted_amount: string } | null
+  outside_window_weighted: string | null
+  filters_applied: boolean
+}
+
+export type UploadSummary = {
+  id: number
+  filename: string
+  status: 'completed' | 'rejected'
+  uploaded_at: string
+  uploaded_by_label: string
+  rows_total: number
+  rows_accepted: number
+  rows_rejected: number
+  rows_unchanged: number
+  rows_replaced: number
+  total_amount: string
+  months: string[]
+}
+
+export type RowProblem = { row: number; code: string; message: string; field: string | null }
+
+export type ReconciliationReport = {
+  filename: string
+  rows_total: number
+  rows_rejected: number
+  rows_new?: number
+  rows_replaced?: number
+  rows_unchanged?: number
+  total_amount: string
+  project_level_rows: number
+  customer_level_rows: number
+  customers: number
+  ignored_columns: string[]
+  errors: RowProblem[]
+  errors_total: number
+  warnings: RowProblem[]
+  months: { month: string; rows: number; actual_total: string; committed_forecast_now: string }[]
+}
+
+export type UploadResult = {
+  dry_run: boolean
+  status: 'completed' | 'rejected'
+  upload_id: number | null
+  report: ReconciliationReport
+}
+
+export type ActualMonth = { month: string; fiscal_year: string; actual_total: string; committed_forecast: string }
+
+export type AccuracyLag = {
+  lag: number
+  status: 'ok' | 'no_snapshot' | 'month_not_in_snapshot'
+  snapshot_id: number | null
+  snapshot_label: string | null
+  snapshot_taken_at: string | null
+  forecast: string | null
+  committed: string | null
+  weighted: string | null
+  variance: string | null
+  variance_percent: string | null
+  flagged: boolean
+}
+
+export type AccuracyReport = {
+  tolerance_percent: string
+  target_lag: number
+  months: { month: string; fiscal_year: string; actual: string; lags: AccuracyLag[] }[]
+  totals: {
+    lag: number
+    months_compared: number
+    months_flagged: number
+    forecast: string
+    actual: string
+    variance: string
+    variance_percent: string | null
+    flagged: boolean
+  }[]
+}
+
+export const fetchSnapshots = (signal?: AbortSignal) => get<SnapshotList>('/v1/snapshots', signal)
+
+export const takeSnapshot = (note: string) =>
+  send<Snapshot>('POST', '/v1/snapshots', note.trim() ? { note: note.trim() } : {})
+
+export const fetchSnapshot = (id: number, filters: ForecastFilters, signal?: AbortSignal) =>
+  get<SnapshotTotals>(`/v1/snapshots/${id}${query({ ...filters })}`, signal)
+
+export const verifySnapshot = (id: number) =>
+  get<{ snapshot_id: number; intact: boolean; checksum: string }>(`/v1/snapshots/${id}/verify`)
+
+export type ExportFormat = 'xlsx' | 'csv'
+export type CsvView = 'monthly' | 'projects' | 'pipeline'
+
+/** Where a file download comes from. Plain links keep the browser's own download handling. */
+export function exportUrl(
+  source: { snapshotId: number | null },
+  filters: ForecastFilters,
+  format: ExportFormat,
+  view: CsvView = 'monthly',
+): string {
+  const path = source.snapshotId === null ? '/v1/forecast/export' : `/v1/snapshots/${source.snapshotId}/export`
+  return `/api${path}${query({ ...filters, format, view: format === 'csv' ? view : undefined })}`
+}
+
+export const fetchUploads = (signal?: AbortSignal) => get<UploadSummary[]>('/v1/actuals/uploads', signal)
+export const fetchActualMonths = (signal?: AbortSignal) => get<ActualMonth[]>('/v1/actuals/months', signal)
+export const fetchAccuracy = (signal?: AbortSignal) => get<AccuracyReport>('/v1/accuracy', signal)
+
+/** Send an actuals file as the request body. `dryRun` checks and reconciles without saving. */
+export function uploadActuals(file: File, dryRun: boolean): Promise<UploadResult> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream' }
+  if (csrf) headers[csrf.header] = csrf.token
+  return request<UploadResult>(`/v1/actuals/uploads${query({ filename: file.name, dry_run: dryRun ? 'true' : undefined })}`, {
+    method: 'POST',
+    headers,
+    body: file,
+  })
+}

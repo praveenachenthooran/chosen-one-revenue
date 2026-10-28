@@ -16,8 +16,10 @@ import {
   type SyncStatus,
 } from '../api'
 import { formatMoney, formatMonthLabel } from '../format'
+import ExportLinks from '../reporting/ExportLinks'
 import DealPanel from './DealPanel'
 import ForecastChart from './ForecastChart'
+import { FILTERS } from './filters'
 import { STATUS_LABELS } from './labels'
 import StagesPanel from './StagesPanel'
 import SyncBanner from './SyncBanner'
@@ -25,15 +27,6 @@ import SyncBanner from './SyncBanner'
 type Data = { forecast: ForecastTotals; deals: DealPage }
 type State = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready'; data: Data }
 type Notice = { ok: boolean; text: string }
-
-const FILTERS: { key: keyof ForecastFilters; label: string; options: (o: FilterOptions) => [string, string][] }[] = [
-  { key: 'owner', label: 'Owner', options: (o) => o.owners.map((p) => [p.code, p.name]) },
-  { key: 'practice', label: 'TECH', options: (o) => o.practices.map((v) => [v, v]) },
-  { key: 'region', label: 'Region', options: (o) => o.regions.map((v) => [v, v]) },
-  { key: 'industry', label: 'Industry', options: (o) => o.industries.map((v) => [v, v]) },
-  { key: 'category', label: 'Category', options: (o) => o.categories.map((v) => [v, v]) },
-  { key: 'customer', label: 'Customer', options: (o) => o.customers.map((v) => [v, v]) },
-]
 
 const DEAL_VIEWS = [
   ['counting', 'In the forecast'],
@@ -211,6 +204,7 @@ export default function PipelineView({ user, onSessionEnded, onOpenProject }: Pr
           </button>
         )}
       </div>
+      <ExportLinks snapshotId={null} filters={filters} />
 
       {state.kind === 'loading' && (
         <div className="state-box" role="status" aria-live="polite">

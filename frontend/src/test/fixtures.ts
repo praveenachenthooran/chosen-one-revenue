@@ -1,4 +1,6 @@
 import type {
+  AccuracyReport,
+  ActualMonth,
   AuthStatus,
   Confirmation,
   DealDetail,
@@ -9,9 +11,14 @@ import type {
   ImportRun,
   MonthColumn,
   Project,
+  ReconciliationReport,
+  Snapshot,
+  SnapshotList,
+  SnapshotTotals,
   Stage,
   SyncStatus,
   TotalsResponse,
+  UploadSummary,
 } from '../api'
 
 export const months: MonthColumn[] = [
@@ -132,6 +139,7 @@ export const history: HistoryItem[] = [
     reason: 'Client added scope',
     actor_name: 'Avery Chen',
     from_import: false,
+    post_snapshot: false,
   },
   {
     id: 1,
@@ -144,6 +152,7 @@ export const history: HistoryItem[] = [
     reason: null,
     actor_name: 'excel-import',
     from_import: true,
+    post_snapshot: false,
   },
 ]
 
@@ -394,6 +403,163 @@ export const pipelineRoutes: Routes = {
   '/api/v1/pipeline/stages': () => json(stages),
 }
 
+// ---- Snapshot, actuals and accuracy fixtures --------------------------------------------------
+
+export const financeMe: AuthStatus = {
+  ...signedIn,
+  user: { id: 3, name: 'Fin Ance', email: 'fin@corp.test', roles: ['Finance'], can_edit_all: false },
+}
+export const croMe: AuthStatus = {
+  ...signedIn,
+  user: { id: 4, name: 'Casey CRO', email: 'cro@corp.test', roles: ['CRO / Sales Leadership'], can_edit_all: true },
+}
+
+export const snapshot1: Snapshot = {
+  id: 1,
+  label: '2026-11 scheduled',
+  period_month: '2026-11-01',
+  kind: 'scheduled',
+  taken_at: '2026-11-02T09:00:00Z',
+  taken_by_label: 'scheduled job',
+  note: null,
+  as_of: '2026-10-01',
+  import_run_id: 1,
+  sync_run_id: 2,
+  stage_probabilities: [],
+  committed_total: '18000.00',
+  weighted_total: '60000.00',
+  combined_total: '78000.00',
+  unphased_deals: 1,
+  unphased_weighted: '596000.00',
+  outside_window_weighted: '0.00',
+  project_count: 3,
+  deal_count: 2,
+  line_count: 12,
+  checksum: 'abcdef0123456789'.repeat(4),
+}
+export const snapshot2: Snapshot = {
+  ...snapshot1,
+  id: 2,
+  label: '2026-11 manual (03 Nov 10:00 UTC)',
+  kind: 'manual',
+  taken_by_label: 'Fin Ance',
+  note: 'Board pack',
+  combined_total: '80000.00',
+}
+
+export const snapshotList: SnapshotList = {
+  items: [snapshot2, snapshot1],
+  next_scheduled: '2026-12-01',
+  scheduled_taken_this_month: true,
+  last_job: {
+    id: 5,
+    job: 'monthly_snapshot',
+    started_at: '2026-11-02T09:00:00Z',
+    finished_at: '2026-11-02T09:00:02Z',
+    status: 'completed',
+    message: 'Took the November 2026 snapshot #1.',
+    snapshot_id: 1,
+  },
+  can_take: false,
+}
+
+export const snapshotTotals: SnapshotTotals = {
+  snapshot: snapshot1,
+  months: forecast.months,
+  fiscal_years: forecast.fiscal_years.map((y) => ({ ...y })),
+  committed_total: '18000.00',
+  weighted_total: '60000.00',
+  combined_total: '78000.00',
+  unphased: { deals: 1, weighted_amount: '596000.00' },
+  outside_window_weighted: '0.00',
+  filters_applied: false,
+}
+
+export const reconciliation: ReconciliationReport = {
+  filename: 'october.csv',
+  rows_total: 3,
+  rows_rejected: 0,
+  rows_new: 3,
+  rows_replaced: 0,
+  rows_unchanged: 0,
+  total_amount: '3000.00',
+  project_level_rows: 2,
+  customer_level_rows: 1,
+  customers: 3,
+  ignored_columns: ['Notes'],
+  errors: [],
+  errors_total: 0,
+  warnings: [],
+  months: [{ month: '2026-10-01', rows: 3, actual_total: '3000.00', committed_forecast_now: '3000.00' }],
+}
+
+export const uploads: UploadSummary[] = [
+  {
+    id: 2,
+    filename: 'bad.csv',
+    status: 'rejected',
+    uploaded_at: '2026-11-04T10:00:00Z',
+    uploaded_by_label: 'Fin Ance',
+    rows_total: 4,
+    rows_accepted: 0,
+    rows_rejected: 2,
+    rows_unchanged: 0,
+    rows_replaced: 0,
+    total_amount: '0.00',
+    months: ['2026-10-01'],
+  },
+  {
+    id: 1,
+    filename: 'october.csv',
+    status: 'completed',
+    uploaded_at: '2026-11-03T10:00:00Z',
+    uploaded_by_label: 'Fin Ance',
+    rows_total: 3,
+    rows_accepted: 3,
+    rows_rejected: 0,
+    rows_unchanged: 0,
+    rows_replaced: 0,
+    total_amount: '3000.00',
+    months: ['2026-10-01'],
+  },
+]
+
+export const actualMonths: ActualMonth[] = [
+  { month: '2026-10-01', fiscal_year: 'FY27', actual_total: '3000.00', committed_forecast: '3000.00' },
+]
+
+const noLag = { snapshot_id: null, snapshot_label: null, snapshot_taken_at: null, forecast: null, committed: null, weighted: null, variance: null, variance_percent: null }
+export const accuracy: AccuracyReport = {
+  tolerance_percent: '5',
+  target_lag: 3,
+  months: [
+    {
+      month: '2026-10-01',
+      fiscal_year: 'FY27',
+      actual: '3000.00',
+      lags: [
+        { lag: 1, status: 'ok', snapshot_id: 3, snapshot_label: '2026-09 scheduled', snapshot_taken_at: '2026-09-01T09:00:00Z', forecast: '3200.00', committed: '3200.00', weighted: '0.00', variance: '200.00', variance_percent: '6.67', flagged: true },
+        { lag: 2, status: 'no_snapshot', ...noLag, flagged: false },
+        { lag: 3, status: 'ok', snapshot_id: 1, snapshot_label: '2026-07 scheduled', snapshot_taken_at: '2026-07-01T09:00:00Z', forecast: '3000.00', committed: '3000.00', weighted: '0.00', variance: '0.00', variance_percent: '0.00', flagged: false },
+      ],
+    },
+  ],
+  totals: [
+    { lag: 1, months_compared: 1, months_flagged: 1, forecast: '3200.00', actual: '3000.00', variance: '200.00', variance_percent: '6.67', flagged: true },
+    { lag: 2, months_compared: 0, months_flagged: 0, forecast: '0.00', actual: '0.00', variance: '0.00', variance_percent: null, flagged: false },
+    { lag: 3, months_compared: 1, months_flagged: 0, forecast: '3000.00', actual: '3000.00', variance: '0.00', variance_percent: '0.00', flagged: false },
+  ],
+}
+
+export const reportingRoutes: Routes = {
+  '/api/v1/snapshots': () => json(snapshotList),
+  '/api/v1/snapshots/1': () => json(snapshotTotals),
+  '/api/v1/snapshots/1/verify': () => json({ snapshot_id: 1, intact: true, checksum: snapshot1.checksum }),
+  '/api/v1/actuals/uploads': () => json(uploads),
+  '/api/v1/actuals/months': () => json(actualMonths),
+  '/api/v1/accuracy': () => json(accuracy),
+}
+
 export const okRoutes: Routes = {
   '/api/health': () => json({ status: 'ok', service: 'chosen-one-api' }),
   '/api/auth/me': () => json(signedIn),
@@ -416,4 +582,5 @@ export const okRoutes: Routes = {
     }),
   'POST /api/auth/logout': () => json({ authenticated: false }),
   ...pipelineRoutes,
+  ...reportingRoutes,
 }
