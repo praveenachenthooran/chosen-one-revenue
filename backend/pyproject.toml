@@ -41,6 +41,11 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.ruff.lint.per-file-ignores]
 "migrations/versions/*" = ["E501"]  # Alembic-generated
+# These import the `env` pytest fixture from test_pipeline_api and then use it as a parameter.
+"tests/test_snapshots.py" = ["F811"]
+"tests/test_actuals.py" = ["F811"]
+"tests/test_accuracy.py" = ["F811"]
+"tests/test_reporting_api.py" = ["F811"]
 
 [tool.pyright]
 pythonVersion = "3.14"
