@@ -110,7 +110,7 @@ export default function PortfolioView({ user, title, onOpen }: Props) {
               </button>
             </div>
           ) : (
-            <div className="tscroll">
+            <div className="tscroll capped">
               <table className="tbl" style={{ minWidth: 900 }}>
                 <thead>
                   <tr>
@@ -157,7 +157,7 @@ export default function PortfolioView({ user, title, onOpen }: Props) {
             </div>
           )}
         </section>
-        <Fold title="Portfolio revenue" hint="Expected revenue by month for the projects shown above." defaultOpen>
+        <Fold title="Portfolio revenue" hint="Expected revenue by month for the projects shown above.">
           {chart ? (
             <div className="stack" style={{ gap: 12 }}>
               <ChartLegend items={[{ label: 'Expected revenue', color: '--brand', kind: 'line' }]} />

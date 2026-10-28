@@ -11,6 +11,17 @@ const MESSAGES: Record<string, string> = {
   session_ended: 'Your session has ended. Please sign in again.',
 }
 
+function GoogleMark() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#EA4335" d="M12 5.04c1.62 0 3.07.56 4.21 1.65l3.15-3.15C17.46 1.73 14.97.75 12 .75 7.7.75 3.99 3.22 2.18 6.81l3.67 2.85C6.73 7.05 9.15 5.04 12 5.04z"/>
+      <path fill="#4285F4" d="M23.25 12.27c0-.79-.07-1.54-.2-2.27H12v4.51h6.3a5.4 5.4 0 0 1-2.34 3.54l3.62 2.81c2.12-1.96 3.67-4.84 3.67-8.59z"/>
+      <path fill="#FBBC05" d="M5.85 14.34a7.2 7.2 0 0 1 0-4.68L2.18 6.81a11.25 11.25 0 0 0 0 10.38z"/>
+      <path fill="#34A853" d="M12 23.25c3.04 0 5.59-1 7.46-2.72l-3.62-2.81c-1 .68-2.29 1.08-3.84 1.08-2.85 0-5.27-2.01-6.15-4.62l-3.67 2.85C3.99 20.78 7.7 23.25 12 23.25z"/>
+    </svg>
+  )
+}
+
 function authErrorMessage(code: string): string {
   return MESSAGES[code] ?? MESSAGES.failed
 }
@@ -69,6 +80,7 @@ export default function SignIn({ error }: { error: string | null }) {
           )}
           {/* A full-page navigation: the API redirects to Google and back. */}
           <a className="btn btn-primary btn-lg" href="/api/auth/login">
+            <GoogleMark />
             Sign in with Google
           </a>
           <p className="hint">Access is limited to people an administrator has provisioned.</p>

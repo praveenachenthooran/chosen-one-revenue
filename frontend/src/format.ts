@@ -49,6 +49,11 @@ export function formatMoneyShort(value: number | string | null | undefined): str
   return `${sign}$${Math.round(abs)}`
 }
 
+/** Server summaries quote exact amounts such as 225000.00; show them as $225,000 in the interface. */
+export function tidyMoney(text: string): string {
+  return text.replace(/\b\d{4,}\.\d{2}\b/g, (m) => formatMoney(m))
+}
+
 export function formatPercent(value: number, digits = 1): string {
   const sign = value > 0 ? '+' : value < 0 ? '-' : ''
   return `${sign}${Math.abs(value * 100).toFixed(digits)}%`

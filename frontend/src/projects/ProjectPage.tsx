@@ -9,7 +9,7 @@ import {
   type HistoryItem,
   type ProjectDetail,
 } from '../api'
-import { formatDate, formatMoney, formatMoneyExact, formatMonthLabel } from '../format'
+import { formatDate, formatMoney, formatMoneyExact, formatMonthLabel, tidyMoney } from '../format'
 import DetectiveDrawer from '../quality/DetectiveDrawer'
 import { RULE_LABELS } from '../quality/labels'
 import { ErrorState, Fold, Loading, Notice, PageHeader } from '../ui/Panel'
@@ -23,7 +23,7 @@ type Props = {
   projectId: number
   backLabel: string
   onBack: () => void
-  /** Client Partners see the graph collapsed (Michael's feedback); portfolio users see it open. */
+  /** Collapsed for Client Partners and Commercial Owners (Michael's feedback); open from the leadership overview. */
   chartOpen: boolean
   onSessionEnded: () => void
   onOpenDeal: (deal: { id: number; title: string }) => void
@@ -175,9 +175,11 @@ export default function ProjectPage({ projectId, backLabel, onBack, chartOpen, o
       />
       <div className="stack">
         {ws.notice && (
-          <Notice kind={ws.notice.kind} onDismiss={() => ws.setNotice(null)}>
-            {ws.notice.text}
-          </Notice>
+          <div className="notice-sticky">
+            <Notice kind={ws.notice.kind} onDismiss={() => ws.setNotice(null)}>
+              {ws.notice.text}
+            </Notice>
+          </div>
         )}
         <dl className="kv">
           {facts.map(([k, v]) => (
@@ -216,11 +218,11 @@ export default function ProjectPage({ projectId, backLabel, onBack, chartOpen, o
             </ul>
           )}
           {row.findings.length > 0 ? (
-            <ul className="flags">
+            <ul className="flags calm">
               {row.findings.map((f) => (
                 <li key={f.id} className={f.severity === 'error' ? 'high' : ''}>
                   <b>{f.title}</b>
-                  <p>{f.summary}</p>
+                  <p>{tidyMoney(f.summary)}</p>
                   <small>
                     {RULE_LABELS[f.rule_code] ?? f.rule_label} · {formatMoney(f.financial_impact)} at stake
                     {f.status !== 'open' ? ` · ${f.status === 'accepted' ? 'Accepted' : 'Dismissed'}, still detected` : ''}

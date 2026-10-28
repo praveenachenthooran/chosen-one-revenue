@@ -61,7 +61,7 @@ longer detect the condition.
 
 ### Commercial Owner: Portfolio
 
-KPI strip, one filter bar (Customer, Practice, Region, Month, search), a project table, and a line graph of expected
+KPI strip, one filter bar (Customer, Practice, Region, Month, search), a project table, and a collapsed line graph of expected
 monthly revenue for the projects shown. Excel and CSV exports use the existing server export with the same filters.
 Project pages show graph, editing (only where `can_edit`), history and findings. Projects the owner cannot edit are
 labelled "View only".
@@ -94,8 +94,9 @@ From `Team_Feedback.md`:
    series are drawn. Three grouped bar series is the literal reading. If Michael meant bars for two series and a line
    for the third, only `BarChart.tsx` changes.
 2. **Graph placement versus the brief.** The product brief asks for a graph-heavy Commercial Owner view and a graph in
-   the Client Partner's project detail. Michael asks for graphs below and collapsed. Resolution: Commercial Owner's
-   portfolio graph sits *below the table* and is open by default; the Client Partner's project graph is collapsed.
+   the Client Partner's project detail. Michael asks for graphs below and collapsed. Resolution (confirmed by the
+   product owner): graphs sit *below the table and collapsed by default* for Client Partners and Commercial Owners; the
+   leadership overview keeps its large chart open.
 3. **Per-project actuals.** Uploaded actuals are company-wide by month, so no per-project actual line is drawn. Adding
    one needs project-level actuals data.
 4. **Longer-term forecast.** Months after the next three are drawn lighter and labelled "less certain" in the tooltip.
@@ -151,3 +152,17 @@ Reference screenshots and the app's screenshots are taken with Playwright at 144
 into `qa-screenshots/`, which is git-ignored because it can contain confidential data. Note for local development: on
 Windows the Docker bind mount can fail to deliver file-change events to the containerised Vite server, so edits may not
 appear until `docker compose restart frontend`. Running `npm run dev` in `frontend/` natively avoids that.
+
+## Demo-day notes
+
+* **Do not click "Run checks now" on camera unless you want 87 extra warnings.** The demo data is dated 2026-10-01
+  and the earlier QA runs were pinned to that date. A live run uses today's real date, so about 87 more rows cross the
+  30-day "not updated recently" threshold and the Checks page jumps from 17 to 104 open findings. Revalidation itself
+  works. To restore the demo state afterwards, run the same command the earlier runs used (nothing is deleted; the
+  engine marks the extra findings as no longer detected):
+  `docker compose exec backend /opt/venv/bin/python -m app.qa run --as-of 2026-10-01`
+* **Actuals on record are a single $12,345 test upload for Oct 2026.** The grouped bar chart's *Actual* series is
+  therefore almost invisible next to the $2.7M estimate. Upload a realistic actuals file before recording if the
+  Actual bars matter.
+* **Investigations call Claude** when the AI key and data-use switch are on, and take roughly 20 to 40 seconds.
+* Accepting or dismissing a finding is permanent for that finding, so rehearse on a finding you do not need.

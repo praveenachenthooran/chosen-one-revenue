@@ -16,7 +16,7 @@ import {
 } from '../api'
 import BarChart from '../charts/BarChart'
 import ChartLegend from '../charts/ChartLegend'
-import { formatDate, formatMoney, formatMoneyShort, formatMonthLabel } from '../format'
+import { formatDate, formatMoney, formatMoneyShort, formatMonthLabel, tidyMoney } from '../format'
 import DetectiveDrawer from '../quality/DetectiveDrawer'
 import { icons } from '../ui/icons'
 import { ErrorState, KpiStrip, Loading, PageHeader } from '../ui/Panel'
@@ -173,7 +173,7 @@ export default function RevenueOverview({ onSessionEnded, onOpenProject, onOpenD
       />
       <div className="stack">
         <section className="panel" aria-label="Filters">
-          <div className="filters" style={{ ['--filter-cols' as string]: 5 }}>
+          <div className="filters plain" style={{ ['--filter-cols' as string]: FIELDS.length }}>
             {FIELDS.map((f) => (
               <div className="field" key={f.key}>
                 <label htmlFor={`lf-${f.key}`}>{f.label}</label>
@@ -411,17 +411,17 @@ export default function RevenueOverview({ onSessionEnded, onOpenProject, onOpenD
                 No open exceptions.
               </p>
             ) : (
-              <ul className="flags">
+              <ul className="flags calm">
                 {exceptions.map(({ finding, project }) => (
                   <li key={finding.id} className={finding.severity === 'error' ? 'high' : ''}>
                     <b>{finding.title}</b>
-                    <p>{finding.summary}</p>
+                    <p>{tidyMoney(finding.summary)}</p>
                     <small>
                       {project && `${project} · `}
                       {formatMoney(finding.financial_impact)} at stake
                     </small>
                     <div className="flag-actions">
-                      <button type="button" className="btn btn-primary btn-sm" onClick={() => setOpenFinding(finding.id)}>
+                      <button type="button" className="btn btn-sm" onClick={() => setOpenFinding(finding.id)}>
                         Open Revenue Detective
                       </button>
                     </div>

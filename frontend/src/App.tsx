@@ -108,7 +108,7 @@ function Signed({ user, onSignOut, onSessionEnded }: { user: AuthUser; onSignOut
         projectId={projectId}
         backLabel={BACK_LABEL[view]}
         onBack={() => setProjectId(null)}
-        chartOpen={view !== 'partner'}
+        chartOpen={view === 'leadership'}
         onSessionEnded={onSessionEnded}
         onOpenDeal={openDealView}
       />
@@ -120,7 +120,7 @@ function Signed({ user, onSignOut, onSessionEnded }: { user: AuthUser; onSignOut
   else if (view === 'checks')
     body = (
       <>
-        <PageHeader title="Checks" sub="Findings from the deterministic checks, with the AI Revenue Detective to explain them." />
+        <PageHeader title="Checks" sub="Findings from the rule-based checks, with the AI Revenue Detective to explain them." />
         <QualityView onSessionEnded={onSessionEnded} onOpenProject={openProject} onOpenDeal={openDealView} />
       </>
     )

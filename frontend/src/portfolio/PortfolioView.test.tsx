@@ -39,7 +39,7 @@ describe('Portfolio (Commercial Owner)', () => {
     expect(within(screen.getByRole('row', { name: 'Open Cedarfall Energy' })).queryByText('View only')).not.toBeInTheDocument()
   })
 
-  it('draws a line chart below the table, open, of the backend monthly figures for the projects shown', async () => {
+  it('draws a line chart below the table, collapsed by default, of the backend monthly figures for the projects shown', async () => {
     mockFetch()
     render(<App />)
     await screen.findByRole('row', { name: 'Open Cedarfall Energy' })
@@ -51,7 +51,7 @@ describe('Portfolio (Commercial Owner)', () => {
     expect(chart.config.data.datasets[0].data).toEqual([1250.5]) // project 1's stored October amount
 
     const panel = screen.getByText('Portfolio revenue').closest('details') as HTMLDetailsElement
-    expect(panel.open).toBe(true)
+    expect(panel.open).toBe(false) // Michael: below the table and collapsed
     const table = screen.getByRole('table')
     expect(table.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy() // graph is below
   })

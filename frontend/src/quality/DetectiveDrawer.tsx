@@ -8,7 +8,7 @@ import {
   type FindingDetail,
   type Investigation,
 } from '../api'
-import { formatDate, formatMoney } from '../format'
+import { formatDate, formatMoney, tidyMoney } from '../format'
 import { Drawer } from '../ui/Panel'
 import { describeStep, evidenceRows } from './evidence'
 import { STATUS_LABELS } from './labels'
@@ -48,11 +48,30 @@ function CauseGroup({ cause }: { cause: EvidenceCause }) {
   )
 }
 
+/** The first two sentences, with the rest on request, so a long explanation never fills the drawer. */
+function Summary({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
+  const clean = tidyMoney(text)
+  const sentences = clean.split(/(?<=[.!?])\s+(?=[A-Z"“(])/)
+  const short = sentences.slice(0, 2).join(' ').trim()
+  const long = clean.length > short.length + 10
+  return (
+    <p className="det-summary">
+      {open || !long ? clean : short}{' '}
+      {long && (
+        <button type="button" className="linkbtn" onClick={() => setOpen((o) => !o)}>
+          {open ? 'Show less' : 'Read more'}
+        </button>
+      )}
+    </p>
+  )
+}
+
 function Result({ latest }: { latest: Investigation }) {
   const result = latest.result!
   return (
     <>
-      <p className="det-summary">{result.summary}</p>
+      <Summary text={result.summary} />
       <div className="det-impact">
         <b>{formatMoney(result.financial_impact.amount)}</b>
         <span className="hint">{result.financial_impact.basis}. Calculated from the records, not estimated by the model.</span>
@@ -203,7 +222,7 @@ export default function DetectiveDrawer({ findingId, onClose, onChanged, onSessi
             <span className="pill">{STATUS_LABELS[detail.status]}</span>
             {detail.awaiting_review && <span className="pill amber">Awaiting review</span>}
           </div>
-          <p>{detail.summary}</p>
+          <p>{tidyMoney(detail.summary)}</p>
           <div className="det-impact">
             <b>{formatMoney(detail.financial_impact)}</b>
             <span className="hint">revenue at stake · {detail.routed_to_name ? `with ${detail.routed_to_name}` : 'unassigned'}</span>

@@ -54,7 +54,7 @@ describe('Project page', () => {
     expect(text).not.toMatch(/[{}]\s*"|":\s*"|source_row_id|project_id/)
   })
 
-  it('keeps the graph collapsed for a Client Partner, and open for a portfolio owner', async () => {
+  it('keeps the graph collapsed for both a Client Partner and a Commercial Owner', async () => {
     mockFetch()
     const partner = render(<App />)
     await openProject()
@@ -65,7 +65,7 @@ describe('Project page', () => {
     mockFetch({ '/api/auth/me': () => json(owner) })
     render(<App />)
     await openProject()
-    expect((screen.getByText('Monthly revenue').closest('details') as HTMLDetailsElement).open).toBe(true)
+    expect((screen.getByText('Monthly revenue').closest('details') as HTMLDetailsElement).open).toBe(false)
   })
 
   it('draws the original import against the current forecast as lines', async () => {

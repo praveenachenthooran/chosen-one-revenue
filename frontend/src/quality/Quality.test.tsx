@@ -278,6 +278,26 @@ describe('Finding panel', () => {
     expect(screen.queryByText(/"project_id"/)).not.toBeInTheDocument()
   })
 
+  it('shortens a long summary to two sentences, keeps decimals intact, and expands on request', async () => {
+    const long = {
+      ...completedInvestigation,
+      result: {
+        ...completedInvestigation.result!,
+        summary: 'Revenue rose 74.4% between January and February. The rise is confirmed by the records. A related deal may explain it. Nothing proves that link.',
+      },
+    }
+    mockFetch({ '/api/v1/qa/findings/11': () => json({ ...findingDetail, investigations: [long], awaiting_review: true, investigation_status: 'completed' }) })
+    await openQuality()
+    const section = within(within(await openFinding(/Unusual revenue rise/)).getByRole('region', { name: 'Investigation' }))
+
+    expect(section.getByText(/Revenue rose 74\.4% between January and February\. The rise is confirmed by the records\./)).toBeInTheDocument()
+    expect(section.queryByText(/Nothing proves that link/)).not.toBeInTheDocument()
+    await userEvent.click(section.getByRole('button', { name: 'Read more' }))
+    expect(section.getByText(/Nothing proves that link/)).toBeInTheDocument()
+    await userEvent.click(section.getByRole('button', { name: 'Show less' }))
+    expect(section.queryByText(/Nothing proves that link/)).not.toBeInTheDocument()
+  })
+
   it('labels an investigation done by Claude', async () => {
     const ai = { ...completedInvestigation, mode: 'ai' as const, model: 'claude-sonnet-5-5', fallback_reason: null }
     mockFetch({ '/api/v1/qa/findings/11': () => json({ ...findingDetail, investigations: [ai] }) })

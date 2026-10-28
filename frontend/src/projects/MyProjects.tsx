@@ -57,7 +57,7 @@ export default function MyProjects({ user, onOpen }: { user: AuthUser; onOpen: (
               </button>
             </div>
           ) : (
-            <div className="tscroll">
+            <div className="tscroll capped">
               <table className="tbl" style={{ minWidth: 860 }}>
                 <thead>
                   <tr>
